@@ -8,11 +8,14 @@
   inputs = {
     haskellNix.url = "github:input-output-hk/haskell.nix";
     nixpkgs = { follows = "haskellNix/nixpkgs-unstable"; };
+    flake-parts.url = "github:hercules-ci/flake-parts";
     flake-utils.url = "github:hamishmack/flake-utils/hkm/nested-hydraJobs";
+    mkdocs.url = "github:paolino/dev-assets?dir=mkdocs";
+    asciinema.url = "github:paolino/dev-assets?dir=asciinema";
   };
 
   outputs =
-    inputs@{ self, nixpkgs, flake-utils, haskellNix, ... }:
+    inputs@{ self, nixpkgs, flake-utils, haskellNix, mkdocs, asciinema, ... }:
     let
       lib = nixpkgs.lib;
       version = self.dirtyShortRev or self.shortRev;
@@ -44,6 +47,14 @@
                 pkgs.just
                 pkgs.nixfmt-classic
                 pkgs.shellcheck
+                pkgs.mkdocs
+                mkdocs.packages.${system}.from-nixpkgs
+                mkdocs.packages.${system}.asciinema-plugin
+                mkdocs.packages.${system}.markdown-callouts
+                mkdocs.packages.${system}.markdown-graphviz
+                asciinema.packages.${system}.compress
+                asciinema.packages.${system}.resize
+                pkgs.asciinema
               ];
               shellHook = ''
                 echo "Entering haskell-mpf dev shell"
