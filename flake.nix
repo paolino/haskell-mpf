@@ -28,7 +28,7 @@
           };
 
           project = pkgs.haskell-nix.cabalProject' {
-            name = "haskell-mpf";
+            name = "haskell-mpfs";
             src = ./.;
             compiler-nix-name = "ghc984";
             shell = {
@@ -57,7 +57,7 @@
                 pkgs.asciinema
               ];
               shellHook = ''
-                echo "Entering haskell-mpf dev shell"
+                echo "Entering haskell-mpfs dev shell"
               '';
             };
           };
@@ -65,9 +65,9 @@
         in {
           packages = {
             default =
-              project.hsPkgs.haskell-mpf.components.library;
+              project.hsPkgs.haskell-mpfs.components.library;
             unit-tests =
-              project.hsPkgs.haskell-mpf.components.tests.unit-tests;
+              project.hsPkgs.haskell-mpfs.components.tests.unit-tests;
           };
           devShells.default = project.shell;
         };

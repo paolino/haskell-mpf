@@ -1,4 +1,4 @@
-# haskell-mpf
+# haskell-mpfs
 
 Merkle Patricia Forestry (MPF) implementation in Haskell.
 
