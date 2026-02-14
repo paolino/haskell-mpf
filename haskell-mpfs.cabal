@@ -1,5 +1,5 @@
 cabal-version:   3.4
-name:            haskell-mpf
+name:            haskell-mpfs
 version:         0.1.0.0
 synopsis:        Merkle Patricia Forestry implementation in Haskell
 description:
@@ -12,8 +12,8 @@ license:         Apache-2.0
 license-file:    LICENSE
 author:          Paolo Veronelli
 maintainer:      paolo.veronelli@gmail.com
-homepage:        https://github.com/paolino/haskell-mpf
-bug-reports:     https://github.com/paolino/haskell-mpf/issues
+homepage:        https://github.com/paolino/haskell-mpfs
+bug-reports:     https://github.com/paolino/haskell-mpfs/issues
 category:        Cryptography, Data
 stability:       experimental
 build-type:      Simple
@@ -92,7 +92,7 @@ library mpf-test-lib
   build-depends:
     , base
     , bytestring
-    , haskell-mpf
+    , haskell-mpfss
     , lens
     , rocksdb-kv-transactions:kv-transactions
     , text                                    >=2.0 && <2.2
@@ -108,8 +108,8 @@ test-suite unit-tests
     , base
     , bytestring
     , containers
-    , haskell-mpf
-    , haskell-mpf:mpf-test-lib
+    , haskell-mpfss
+    , haskell-mpfss:mpf-test-lib
     , hspec                     >=2.11 && <2.12
     , QuickCheck                >=2.14 && <2.18
 
@@ -132,8 +132,8 @@ executable mpf-bench
   build-depends:
     , base
     , bytestring
-    , haskell-mpf
-    , haskell-mpf:mpf-test-lib
+    , haskell-mpfss
+    , haskell-mpfss:mpf-test-lib
     , time                      >=1.12 && <1.14
 
 executable mpf-bench-rocksdb
@@ -146,7 +146,7 @@ executable mpf-bench-rocksdb
     , base
     , bytestring
     , directory                              >=1.3 && <1.4
-    , haskell-mpf
+    , haskell-mpfs
     , lens
     , rocksdb-kv-transactions:kv-transactions
     , time                                   >=1.12 && <1.14
