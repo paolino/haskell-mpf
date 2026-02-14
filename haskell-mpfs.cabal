@@ -92,7 +92,7 @@ library mpf-test-lib
   build-depends:
     , base
     , bytestring
-    , haskell-mpfss
+    , haskell-mpfs
     , lens
     , rocksdb-kv-transactions:kv-transactions
     , text                                    >=2.0 && <2.2
@@ -108,8 +108,8 @@ test-suite unit-tests
     , base
     , bytestring
     , containers
-    , haskell-mpfss
-    , haskell-mpfss:mpf-test-lib
+    , haskell-mpfs
+    , haskell-mpfs:mpf-test-lib
     , hspec                     >=2.11 && <2.12
     , QuickCheck                >=2.14 && <2.18
 
@@ -132,8 +132,8 @@ executable mpf-bench
   build-depends:
     , base
     , bytestring
-    , haskell-mpfss
-    , haskell-mpfss:mpf-test-lib
+    , haskell-mpfs
+    , haskell-mpfs:mpf-test-lib
     , time                      >=1.12 && <1.14
 
 executable mpf-bench-rocksdb
