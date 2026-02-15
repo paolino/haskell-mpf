@@ -19,5 +19,16 @@ jobs:
         with:
           cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
 
-      - name: Build, test, lint
-        run: nix develop -c bash -c "just CI"
+      - name: Build and test
+        run: nix build .#unit-tests --quiet
+
+      - name: Build offchain interfaces
+        run: nix build .#cardano-mpfs-offchain --quiet
+
+      - name: Check formatting
+        run: |
+          nix develop --quiet -c fourmolu -m check $(find . -name '*.hs' -not -path './dist-newstyle/*' -not -path './.direnv/*')
+          nix develop --quiet -c bash -c "find . -name '*.cabal' -not -path './dist-newstyle/*' | xargs cabal-fmt -c"
+
+      - name: Lint
+        run: nix develop --quiet -c hlint $(find . -name '*.hs' -not -path './dist-newstyle/*' -not -path './.direnv/*')
