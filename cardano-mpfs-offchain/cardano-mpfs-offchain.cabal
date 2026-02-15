@@ -1,21 +1,21 @@
-cabal-version:   3.4
-name:            cardano-mpfs-offchain
-version:         0.0.0
-synopsis:        Offchain service interfaces for Cardano MPFS
+cabal-version: 3.4
+name:          cardano-mpfs-offchain
+version:       0.0.0
+synopsis:      Offchain service interfaces for Cardano MPFS
 description:
   Record-of-functions interfaces for the Cardano Merkle
   Patricia Forestry offchain service. Uses real
   cardano-ledger types for all Cardano primitives.
 
-license:         Apache-2.0
-license-file:    LICENSE
-author:          Paolo Veronelli
-maintainer:      paolo.veronelli@gmail.com
-category:        Cardano
-build-type:      Simple
+license:       Apache-2.0
+license-file:  LICENSE
+author:        Paolo Veronelli
+maintainer:    paolo.veronelli@gmail.com
+category:      Cardano
+build-type:    Simple
 
 common warnings
-  ghc-options: -Wall
+  ghc-options:        -Wall
   default-extensions:
     DuplicateRecordFields
     StrictData
@@ -25,14 +25,14 @@ library
   default-language: GHC2021
   hs-source-dirs:   lib
   build-depends:
-    , base                  >=4.18 && <5
-    , bytestring            >=0.11 && <0.13
-    , cardano-ledger-api
-    , cardano-ledger-core
-    , cardano-ledger-conway
-    , cardano-ledger-mary
-    , cardano-ledger-binary
+    , base                   >=4.18 && <5
+    , bytestring             >=0.11 && <0.13
     , cardano-crypto-class
+    , cardano-ledger-api
+    , cardano-ledger-binary
+    , cardano-ledger-conway
+    , cardano-ledger-core
+    , cardano-ledger-mary
 
   exposed-modules:
     Cardano.MPFS.Context
@@ -53,15 +53,14 @@ test-suite unit-tests
   build-depends:
     , base
     , bytestring
-    , containers
-    , cardano-mpfs-offchain
-    , cardano-ledger-core
     , cardano-crypto-class
-    , hspec                >=2.11 && <2.12
-    , QuickCheck           >=2.14 && <2.18
+    , cardano-ledger-core
+    , cardano-mpfs-offchain
+    , containers
+    , hspec                  >=2.11 && <2.12
+    , QuickCheck             >=2.14 && <2.18
 
-  build-tool-depends:
-    hspec-discover:hspec-discover >=2.11 && <2.12
+  build-tool-depends: hspec-discover:hspec-discover >=2.11 && <2.12
   other-modules:
     Cardano.MPFS.Generators
     Cardano.MPFS.StateSpec
