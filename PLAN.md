@@ -29,13 +29,23 @@ resolution surprises.
 │  Transaction building interface     │  ← record of functions
 │  Coin selection, fee estimation     │
 ├─────────────────────────────────────┤
-│  Yaci Store client (HTTP)           │  ← thin REST client
-│  UTxO queries, protocol params      │
+│  cardano-utxo-csmt (embedded)      │  ← replaces Yaci Store
+│  UTxO queries via address prefix    │
+│  Mithril bootstrap, ChainSync      │
 ├─────────────────────────────────────┤
-│  Signing & submission               │
-│  via Yaci / Ogmios                  │
+│  Ogmios client (thin)              │
+│  Protocol params + tx submission    │
 └─────────────────────────────────────┘
 ```
+
+**Decision: No Yaci Store.** We embed `cardano-utxo-csmt` directly.
+It already does ChainSync + Mithril bootstrap + full UTxO set in
+RocksDB. To support UTxO-by-address queries we change the CSMT key
+encoding to `address ++ txId ++ txIx` so prefix scans give us all
+UTxOs at an address. Ogmios is only needed for protocol parameters
+and transaction submission (2 endpoints).
+
+**Runtime stack:** Cardano node + Ogmios (no Yaci Store).
 
 ## TypeScript Singleton Map
 
@@ -75,16 +85,15 @@ in Haskell (replacing `Promise<T>` with `m a`).
 
 **1. Provider** — blockchain queries (read-only)
 
-UTxO lookups, protocol parameters, tx evaluation.
-Yaci Store (HTTP) or Blockfrost. Stateless.
+UTxO lookups via cardano-utxo-csmt (address prefix scan on
+the embedded CSMT). Protocol parameters and tx evaluation
+via Ogmios local-state-query.
 
 ```
 Provider m = Provider
-  { fetchUtxos       :: Address -> m [UTxO]
-  , fetchProtocolParams :: m ProtocolParams
-  , evaluateTx       :: TxCBOR -> m ExUnits
-  , fetchTxInfo      :: TxHash -> m (Maybe TxInfo)
-  , fetchBlockInfo   :: BlockHash -> m (Maybe BlockInfo)
+  { fetchUtxos         :: Address -> m [UTxO]  -- CSMT prefix scan
+  , fetchProtocolParams :: m ProtocolParams     -- Ogmios
+  , evaluateTx         :: TxCBOR -> m ExUnits   -- Ogmios
   }
 ```
 
@@ -237,16 +246,24 @@ No typeclasses — pass `TxBuilder m` explicitly.
 - Lightweight custom implementation (our transactions are simple)
 - Mock backend for testing
 
-### 3. Yaci Store Client
+### 3. UTxO Index (cardano-utxo-csmt)
 
-**What we need from Yaci:**
-- `GET /api/v1/utxos?address=<script_address>` — UTxOs at our address
-- Protocol parameters (cached, updated per epoch)
-- Transaction submission
+**Replaces Yaci Store entirely.** We embed cardano-utxo-csmt as a
+library dependency. It provides:
 
-**Implementation:** Simple Servant client or http-conduit, ~200 LOC.
+- Full UTxO set via Mithril bootstrap + ChainSync
+- RocksDB-backed CSMT with rollback support
+- Merkle inclusion proofs for any UTxO
 
-No Ouroboros/ChainSync needed — Yaci handles node communication.
+**Required change:** re-key the CSMT to `address ++ txId ++ txIx`
+so that `seekKey(addressPrefix)` + cursor iteration gives all
+UTxOs at an address. This is a change in `UTxOs.hs` key encoding,
+not in the CSMT library itself.
+
+**What we still need from Ogmios** (thin client, ~100 LOC):
+- `queryLedgerState/protocolParameters` — cached per epoch
+- `submitTransaction` — tx submission
+- `evaluateTransaction` — execution unit estimation
 
 ### 4. Service Layer
 
@@ -273,10 +290,10 @@ Extract MPF from haskell-csmt. Done.
 - Mock backend for testing
 - Actual backend implementation deferred to Phase 3
 
-### Phase 2 — Yaci Store Client
-- HTTP client for UTxO queries
-- Protocol parameter fetching
-- Transaction submission endpoint
+### Phase 2 — UTxO Index + Ogmios Client
+- Embed cardano-utxo-csmt as library (Mithril + ChainSync)
+- Add address-prefixed key encoding for UTxO-by-address queries
+- Thin Ogmios client for protocol params + tx submission
 
 ### Phase 3 — Transaction Builders
 - Boot transaction (create new MPF instance)
@@ -294,7 +311,7 @@ Extract MPF from haskell-csmt. Done.
 ### Phase 5 — Deployment
 - Docker image via Nix
 - Deploy to plutimus.com alongside existing TypeScript service
-- Integration tests with Yaci devkit
+- Integration tests with Yaci devkit or local testnet
 
 ## Open Questions
 
@@ -303,7 +320,7 @@ Extract MPF from haskell-csmt. Done.
    implementation (our transactions are simple)?
 2. **Signing** — use cardano-api signing or keep keys external
    (signingless mode)?
-3. **Indexer** — reuse Yaci store events or implement minimal
-   ChainSync for our script address only?
+3. ~~**Indexer**~~ DECIDED — embed cardano-utxo-csmt, no Yaci.
+   ChainSync via csmt, protocol params + submit via Ogmios.
 4. **Multi-oracle** — the TypeScript version supports multiple
    oracles. Same for Haskell?
