@@ -18,24 +18,21 @@ resolution surprises.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────┐
-│         haskell-mpfs                │
-│  HTTP service (Servant)             │
-├─────────────────────────────────────┤
-│  MPF trie (haskell-mpf)             │  ← DONE
-│  Proofs, insertion, deletion        │
-├─────────────────────────────────────┤
-│  Transaction building interface     │  ← record of functions
-│  Coin selection, fee estimation     │
-├─────────────────────────────────────┤
-│  cardano-utxo-csmt (embedded)      │  ← replaces Yaci Store
-│  UTxO queries via address prefix    │
-│  Mithril bootstrap, ChainSync      │
-├─────────────────────────────────────┤
-│  Node client (node-to-client)      │
-│  Local state query + tx submission  │
-└─────────────────────────────────────┘
+```mermaid
+block-beta
+    columns 1
+    block:http["haskell-mpfs — HTTP service (Servant)"]
+    end
+    block:mpf["MPF trie (haskell-mpf) ✓ DONE\nProofs, insertion, deletion"]
+    end
+    block:txb["Transaction building interface\nCoin selection, fee estimation\n(record of functions)"]
+    end
+    block:csmt["cardano-utxo-csmt (embedded)\nUTxO queries via address prefix\nMithril bootstrap, ChainSync\n(replaces Yaci Store)"]
+    end
+    block:node["Node client (node-to-client)\nLocal state query + tx submission"]
+    end
+
+    http --> mpf --> txb --> csmt --> node
 ```
 
 ### Infrastructure decisions
@@ -77,29 +74,32 @@ in Haskell (replacing `Promise<T>` with `m a`).
 
 ### Dependency graph
 
-```
-         HTTP API (express, port N)
-              |
-              v
-     +--------+--------+
-     |     Context      |  facade — bundles all singletons
-     +--+--+--+--+--+--+  into one record for tx builders
-        |  |  |  |  |  |  and HTTP handlers
-        |  |  |  |  |  |
-        v  |  v  |  v  |
-  Provider |  State  |  Indexer
-  (Yaci/   |  |      |  |
-  Blockf.) |  |      |  v
-        |  |  |  Ogmios WS
-        |  v  v  (ChainSync)
-        | TrieManager  |
-        | (per-token   |
-        |  MPF tries)  |
-        |     |        |
-        +--+--+--------+
-           |
-           v
-        LevelDB
+```mermaid
+graph TD
+    HTTP["HTTP API (Servant)"]
+    CTX["Context\n(facade record)"]
+    PRV["Provider\n(CSMT + node queries)"]
+    TM["TrieManager\n(per-token MPF tries)"]
+    ST["State\n(tokens, requests, rollbacks)"]
+    IDX["Indexer\n(ChainSync follower)"]
+    SUB["Submitter\n(LocalTxSubmission)"]
+    DB["LevelDB / RocksDB"]
+    NODE["Cardano Node\n(node-to-client socket)"]
+
+    HTTP --> CTX
+    CTX --> PRV
+    CTX --> TM
+    CTX --> ST
+    CTX --> IDX
+    CTX --> SUB
+    PRV --> DB
+    PRV --> NODE
+    TM --> DB
+    ST --> DB
+    IDX --> NODE
+    IDX --> ST
+    IDX --> TM
+    SUB --> NODE
 ```
 
 ### The 6 singletons
@@ -210,14 +210,17 @@ Context m = Context
 Singletons are created bottom-up and torn down top-down
 (bracket pattern / `withX` nesting):
 
-```
-LevelDB
-  -> TrieManager
-    -> State
-      -> Process (pure function: State + TrieManager -> Tx -> m ())
-        -> Indexer (takes State, Process, node socket)
-          -> Context (bundles everything)
-            -> HTTP API (takes Context)
+```mermaid
+graph LR
+    DB["LevelDB"]
+    TM["TrieManager"]
+    ST["State"]
+    PR["Process\n(pure function)"]
+    IDX["Indexer"]
+    CTX["Context"]
+    API["HTTP API"]
+
+    DB --> TM --> ST --> PR --> IDX --> CTX --> API
 ```
 
 Each layer is created with a `withX` bracket that guarantees
@@ -303,6 +306,20 @@ not in the CSMT library itself.
 - `submitter.ts` — submission + retry
 
 ## Phases
+
+```mermaid
+graph LR
+    P0["Phase 0\nMPF Library ✓"]
+    P1["Phase 1\nTxBuilder Interface"]
+    P2["Phase 2\nUTxO Index +\nNode Client"]
+    P3["Phase 3\nTransaction\nBuilders"]
+    P4["Phase 4\nService"]
+    P5["Phase 5\nDeployment"]
+
+    P0 --> P1 --> P2 --> P3 --> P4 --> P5
+
+    style P0 fill:#2d6,color:#fff
+```
 
 ### Phase 0 — MPF Library ✓
 Extract MPF from haskell-csmt. Done.
