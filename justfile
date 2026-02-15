@@ -75,12 +75,11 @@ bench-rocksdb count="100000":
     set -euo pipefail
     cabal run mpf-bench-rocksdb -O2 -- {{ count }}
 
-# Full CI pipeline
-CI:
-    #!/usr/bin/env bash
-    set -euo pipefail
+# Full CI pipeline (mirrors .github/workflows/ci.yml)
+ci:
     just build
     just unit
+    just unit-offchain
     just format-check
     just hlint
 

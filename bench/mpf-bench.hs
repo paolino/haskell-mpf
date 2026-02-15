@@ -4,7 +4,7 @@
 -- | MPF Benchmark - Haskell Implementation
 module Main where
 
-import Control.Monad (forM, unless)
+import Control.Monad (forM, unless, when)
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as B8
 import Data.Time.Clock (diffUTCTime, getCurrentTime)
