@@ -37,6 +37,162 @@ resolution surprises.
 └─────────────────────────────────────┘
 ```
 
+## TypeScript Singleton Map
+
+The existing TypeScript service (`mpfs/off_chain/`) is built around
+6 singletons — records of async functions, created once at startup
+and passed around explicitly. This is the architecture we replicate
+in Haskell (replacing `Promise<T>` with `m a`).
+
+### Dependency graph
+
+```
+         HTTP API (express, port N)
+              |
+              v
+     +--------+--------+
+     |     Context      |  facade — bundles all singletons
+     +--+--+--+--+--+--+  into one record for tx builders
+        |  |  |  |  |  |  and HTTP handlers
+        |  |  |  |  |  |
+        v  |  v  |  v  |
+  Provider |  State  |  Indexer
+  (Yaci/   |  |      |  |
+  Blockf.) |  |      |  v
+        |  |  |  Ogmios WS
+        |  v  v  (ChainSync)
+        | TrieManager  |
+        | (per-token   |
+        |  MPF tries)  |
+        |     |        |
+        +--+--+--------+
+           |
+           v
+        LevelDB
+```
+
+### The 6 singletons
+
+**1. Provider** — blockchain queries (read-only)
+
+UTxO lookups, protocol parameters, tx evaluation.
+Yaci Store (HTTP) or Blockfrost. Stateless.
+
+```
+Provider m = Provider
+  { fetchUtxos       :: Address -> m [UTxO]
+  , fetchProtocolParams :: m ProtocolParams
+  , evaluateTx       :: TxCBOR -> m ExUnits
+  , fetchTxInfo      :: TxHash -> m (Maybe TxInfo)
+  , fetchBlockInfo   :: BlockHash -> m (Maybe BlockInfo)
+  }
+```
+
+**2. TrieManager** — per-token MPF trie storage
+
+Manages a map of token-id to MPF trie, backed by LevelDB
+sublevels. Mutex-locked access. Supports hide/unhide for
+rollback handling.
+
+```
+TrieManager m = TrieManager
+  { withTrie :: TokenId -> (SafeTrie m -> m a) -> m a
+  , trieIds  :: m [TokenId]
+  , hide     :: TokenId -> m ()
+  , unhide   :: TokenId -> m ()
+  , delete   :: TokenId -> m ()
+  }
+```
+
+**3. State** — chain-derived state (tokens, requests, rollbacks)
+
+Tracks known tokens, pending requests, checkpoints, and
+rollback journal. All in LevelDB sublevels. Mutex-locked.
+
+```
+State m = State
+  { addToken      :: Slotted Token -> m ()
+  , removeToken   :: Slotted TokenId -> m ()
+  , updateToken   :: Slotted TokenChange -> m ()
+  , addRequest    :: Slotted Request -> m ()
+  , removeRequest :: Slotted OutputRef -> m ()
+  , rollback      :: WithOrigin Slot -> m ()
+  , tokens        :: Tokens m
+  , requests      :: Requests m
+  , checkpoints   :: Checkpoints m
+  }
+```
+
+**4. Indexer** — Ogmios ChainSync follower
+
+WebSocket connection to Ogmios. Follows the chain block by
+block, calling a Process function for each transaction.
+Pausable via mutex (paused during tx building to avoid
+state races).
+
+```
+Indexer m = Indexer
+  { tips       :: m (NetworkTip, IndexerTip)
+  , waitBlocks :: Int -> m BlockHeight
+  , pause      :: m (m ())   -- returns release action
+  }
+```
+
+**5. Submitter** — Ogmios tx submission
+
+Separate Ogmios WebSocket connection for submitting signed
+transactions. Stateless, opens a connection per submission.
+
+```
+Submitter m = Submitter
+  { submitTx :: TxCBOR -> m TxHash
+  }
+```
+
+**6. Context** — facade record
+
+Bundles all singletons into one record passed to transaction
+builders and HTTP handlers. This is the main "environment"
+threaded through the application.
+
+```
+Context m = Context
+  { cagingScript  :: CagingScript
+  , signingWallet :: Maybe (SigningWallet m)
+  , addressWallet :: Address -> m WalletInfo
+  , newTxBuilder  :: m (TxBuilder m)
+  , fetchTokens   :: m [Token]
+  , fetchToken    :: TokenId -> m (Maybe Token)
+  , fetchRequests :: Maybe TokenId -> m [Request]
+  , evaluateTx    :: TxCBOR -> m ExUnits
+  , withTrie      :: TokenId -> (SafeTrie m -> m a) -> m a
+  , waitBlocks    :: Int -> m BlockHeight
+  , tips          :: m (NetworkTip, IndexerTip)
+  , waitSettlement :: TxHash -> m BlockHash
+  , facts         :: TokenId -> m (Map Key Value)
+  , pauseIndexer  :: m (m ())
+  , submitTx      :: TxCBOR -> m TxHash
+  }
+```
+
+### Creation order
+
+Singletons are created bottom-up and torn down top-down
+(bracket pattern / `withX` nesting):
+
+```
+LevelDB
+  -> TrieManager
+    -> State
+      -> Process (pure function: State + TrieManager -> Tx -> m ())
+        -> Indexer (takes State, Process, Ogmios URL)
+          -> Context (bundles everything)
+            -> HTTP API (takes Context)
+```
+
+Each layer is created with a `withX` bracket that guarantees
+cleanup (close connections, flush DB) on exit.
+
 ## Components
 
 ### 1. MPF Library ✓ DONE
