@@ -6,6 +6,16 @@ Rewrite the MPFS (Merkle Patricia Forestry Service) in Haskell,
 replacing the TypeScript off-chain implementation while keeping the
 Aiken on-chain validators unchanged.
 
+## Design Principles
+
+**No typeclasses.** This is a closed world — we use explicit records
+of functions (dictionaries), polymorphic in the monad. Pass them
+around explicitly. Never use typeclasses for abstraction.
+
+This keeps the dependency graph visible, makes testing trivial
+(swap the record), and avoids orphan instances and implicit
+resolution surprises.
+
 ## Architecture
 
 ```
@@ -16,7 +26,7 @@ Aiken on-chain validators unchanged.
 │  MPF trie (haskell-mpf)             │  ← DONE
 │  Proofs, insertion, deletion        │
 ├─────────────────────────────────────┤
-│  Transaction building & balancing   │  ← extracted from cardano-wallet
+│  Transaction building interface     │  ← record of functions
 │  Coin selection, fee estimation     │
 ├─────────────────────────────────────┤
 │  Yaci Store client (HTTP)           │  ← thin REST client
@@ -38,44 +48,38 @@ Repository: `paolino/haskell-mpf` (this repo, to be renamed haskell-mpfs)
 - Proofs, insertion, deletion
 - Pure + RocksDB backends
 
-### 2. Transaction Balancing — Extract from cardano-wallet
+### 2. Transaction Building Interface
 
-**Goal:** Standalone `cardano-balance-tx` with zero cardano-wallet
-dependency.
+**Goal:** Define a pluggable interface (record of functions) for
+transaction building. The backend implementation is deferred —
+could be extracted from cardano-wallet, or a lightweight custom
+implementation.
 
-**Source:** `cardano-wallet/lib/balance-tx/` + `lib/coin-selection/`
+**Interface covers:**
+- Coin selection: pick inputs to cover outputs + fees
+- Fee estimation: compute fees for a given transaction body
+- Balancing: adjust a partial transaction to be valid
+  (inputs ≥ outputs + fees, correct change outputs)
 
-**What exists:**
-- `balanceTx` — takes PartialTx + UTxOs + protocol params → balanced Tx
-- `cardano-coin-selection` — coin selection algorithms
-- Both already semi-separated in the wallet monorepo
+**Shape** (sketch):
 
-**Wallet coupling (to remove):**
-- 11 thin wrapper types from `cardano-wallet-primitive`
-  (Coin, Address, TxIn, TxOut, TokenBundle, TokenMap, etc.)
-- `Convert` module — ~26 wallet↔ledger conversion functions
-- These are all mechanical, no business logic
+```haskell
+data TxBuilder m = TxBuilder
+  { balanceTx
+      :: PartialTx -> UTxOSet -> ProtocolParams -> m BalancedTx
+  , estimateFee
+      :: TxBody -> ProtocolParams -> m Coin
+  , selectCoins
+      :: CoinSelectionGoal -> UTxOSet -> m CoinSelection
+  }
+```
 
-**Extraction strategy:**
-1. Create minimal types package (~480 LOC) replacing wallet-primitive
-2. Inline or vendor the Convert module (~200 LOC)
-3. Copy balance-tx (~5,200 LOC) and coin-selection (~5,500 LOC)
-4. Update imports, no logic changes needed
-5. Migrate test suite (~800 LOC)
+No typeclasses — pass `TxBuilder m` explicitly.
 
-**Dependencies after extraction:**
-- cardano-ledger-* (api, babbage, conway, alonzo, core)
-- cardano-api
-- cardano-addresses
-- cardano-slotting
-- standard Haskell (base, containers, etc.)
-- NO cardano-wallet
-
-**Effort estimate:** 7-10 days
-
-**Open question:** Worth doing now or start with cardano-wallet-primitive
-as dependency and extract later? Starting with the dependency is faster
-but pulls in ouroboros-network transitively.
+**Possible backends (decided later):**
+- Extracted `cardano-balance-tx` from cardano-wallet
+- Lightweight custom implementation (our transactions are simple)
+- Mock backend for testing
 
 ### 3. Yaci Store Client
 
@@ -107,11 +111,11 @@ No Ouroboros/ChainSync needed — Yaci handles node communication.
 ### Phase 0 — MPF Library ✓
 Extract MPF from haskell-csmt. Done.
 
-### Phase 1 — Balance TX Extraction
-- Extract cardano-balance-tx as standalone package
-- Create minimal types replacing wallet-primitive
-- Vendor coin-selection
-- Full test suite
+### Phase 1 — Transaction Building Interface
+- Define `TxBuilder m` record of functions
+- Define domain types (PartialTx, UTxOSet, ProtocolParams, etc.)
+- Mock backend for testing
+- Actual backend implementation deferred to Phase 3
 
 ### Phase 2 — Yaci Store Client
 - HTTP client for UTxO queries
@@ -138,8 +142,9 @@ Extract MPF from haskell-csmt. Done.
 
 ## Open Questions
 
-1. **balanceTx extraction timing** — extract now or depend on
-   cardano-wallet-primitive initially?
+1. **TxBuilder backend** — extract cardano-balance-tx from wallet
+   (proven but heavyweight) or write a lightweight custom
+   implementation (our transactions are simple)?
 2. **Signing** — use cardano-api signing or keep keys external
    (signingless mode)?
 3. **Indexer** — reuse Yaci store events or implement minimal
