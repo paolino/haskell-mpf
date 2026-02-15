@@ -151,7 +151,9 @@ insertingStream FromHexKV{fromHexK, fromHexV} hashing kvCol mpfCol kvs = do
                 rootNode = mkBranchIndirect [] rootValue
             insert mpfCol [] rootNode
   where
-    processGroup :: (HexDigit, [(HexKey, a)]) -> Transaction m cf d ops (HexDigit, Maybe (HexIndirect a))
+    processGroup
+        :: (HexDigit, [(HexKey, a)])
+        -> Transaction m cf d ops (HexDigit, Maybe (HexIndirect a))
     processGroup (digit, items) = do
         case buildComposeFromList items of
             Nothing -> pure (digit, Nothing)

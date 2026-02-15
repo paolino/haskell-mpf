@@ -1,10 +1,9 @@
 {-# LANGUAGE DataKinds #-}
 
-{- |
-Module      : Cardano.MPFS.Generators
-Description : QuickCheck generators for MPFS domain types
-License     : Apache-2.0
--}
+-- |
+-- Module      : Cardano.MPFS.Generators
+-- Description : QuickCheck generators for MPFS domain types
+-- License     : Apache-2.0
 module Cardano.MPFS.Generators
     ( -- * Generators
       genTokenId

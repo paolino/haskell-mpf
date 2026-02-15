@@ -1,8 +1,7 @@
-{- |
-Module      : Cardano.MPFS.State
-Description : Token and request state tracking interface
-License     : Apache-2.0
--}
+-- |
+-- Module      : Cardano.MPFS.State
+-- Description : Token and request state tracking interface
+-- License     : Apache-2.0
 module Cardano.MPFS.State
     ( -- * Combined state
       State (..)
@@ -21,9 +20,9 @@ import Cardano.MPFS.Types
     ( BlockId
     , Request
     , SlotNo
-    , TxIn
     , TokenId
     , TokenState
+    , TxIn
     )
 
 -- | Combined state interface bundling token,

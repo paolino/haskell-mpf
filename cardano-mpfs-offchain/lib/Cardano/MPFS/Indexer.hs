@@ -1,8 +1,7 @@
-{- |
-Module      : Cardano.MPFS.Indexer
-Description : Chain sync follower interface
-License     : Apache-2.0
--}
+-- |
+-- Module      : Cardano.MPFS.Indexer
+-- Description : Chain sync follower interface
+-- License     : Apache-2.0
 module Cardano.MPFS.Indexer
     ( -- * Indexer interface
       Indexer (..)

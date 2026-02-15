@@ -1,8 +1,7 @@
-{- |
-Module      : Cardano.MPFS.Context
-Description : Facade bundling all singleton interfaces
-License     : Apache-2.0
--}
+-- |
+-- Module      : Cardano.MPFS.Context
+-- Description : Facade bundling all singleton interfaces
+-- License     : Apache-2.0
 module Cardano.MPFS.Context
     ( -- * Context
       Context (..)

@@ -1,8 +1,7 @@
-{- |
-Module      : Cardano.MPFS.StateSpec
-Description : Property tests for State interfaces
-License     : Apache-2.0
--}
+-- |
+-- Module      : Cardano.MPFS.StateSpec
+-- Description : Property tests for State interfaces
+-- License     : Apache-2.0
 module Cardano.MPFS.StateSpec (spec) where
 
 import Data.IORef (modifyIORef', newIORef, readIORef)
@@ -106,15 +105,17 @@ spec = do
 
 tokensSpec :: Spec
 tokensSpec = do
-    prop "get on empty returns Nothing" $
-        forAll genTokenId $ \tid ->
+    prop "get on empty returns Nothing"
+        $ forAll genTokenId
+        $ \tid ->
             monadicIO $ do
                 tok <- run mkMockTokens
                 r <- run $ getToken tok tid
                 assert (r == Nothing)
 
-    prop "put/get round-trip" $
-        forAll genTokenId $ \tid ->
+    prop "put/get round-trip"
+        $ forAll genTokenId
+        $ \tid ->
             forAll genTokenState $ \ts ->
                 monadicIO $ do
                     tok <- run mkMockTokens
@@ -122,8 +123,9 @@ tokensSpec = do
                     r <- run $ getToken tok tid
                     assert (r == Just ts)
 
-    prop "put/remove/get returns Nothing" $
-        forAll genTokenId $ \tid ->
+    prop "put/remove/get returns Nothing"
+        $ forAll genTokenId
+        $ \tid ->
             forAll genTokenState $ \ts ->
                 monadicIO $ do
                     tok <- run mkMockTokens
@@ -132,8 +134,9 @@ tokensSpec = do
                     r <- run $ getToken tok tid
                     assert (r == Nothing)
 
-    prop "put appears in listTokens" $
-        forAll genTokenId $ \tid ->
+    prop "put appears in listTokens"
+        $ forAll genTokenId
+        $ \tid ->
             forAll genTokenState $ \ts ->
                 monadicIO $ do
                     tok <- run mkMockTokens
@@ -141,8 +144,9 @@ tokensSpec = do
                     ids <- run $ listTokens tok
                     assert (tid `elem` ids)
 
-    prop "put overwrites previous" $
-        forAll genTokenId $ \tid ->
+    prop "put overwrites previous"
+        $ forAll genTokenId
+        $ \tid ->
             forAll genTokenState $ \ts1 ->
                 forAll genTokenState $ \ts2 ->
                     monadicIO $ do
@@ -152,8 +156,9 @@ tokensSpec = do
                         r <- run $ getToken tok tid
                         assert (r == Just ts2)
 
-    prop "remove on empty doesn't crash" $
-        forAll genTokenId $ \tid ->
+    prop "remove on empty doesn't crash"
+        $ forAll genTokenId
+        $ \tid ->
             monadicIO $ do
                 tok <- run mkMockTokens
                 run $ removeToken tok tid
@@ -161,8 +166,9 @@ tokensSpec = do
 
 requestsSpec :: Spec
 requestsSpec = do
-    prop "put/get round-trip" $
-        forAll genTxIn $ \txin ->
+    prop "put/get round-trip"
+        $ forAll genTxIn
+        $ \txin ->
             forAll genTokenId $ \tid ->
                 forAll (genRequest tid) $ \req ->
                     monadicIO $ do
@@ -171,8 +177,9 @@ requestsSpec = do
                         r <- run $ getRequest rs txin
                         assert (r == Just req)
 
-    prop "put/remove/get returns Nothing" $
-        forAll genTxIn $ \txin ->
+    prop "put/remove/get returns Nothing"
+        $ forAll genTxIn
+        $ \txin ->
             forAll genTokenId $ \tid ->
                 forAll (genRequest tid) $ \req ->
                     monadicIO $ do
@@ -182,14 +189,15 @@ requestsSpec = do
                         r <- run $ getRequest rs txin
                         assert (r == Nothing)
 
-    prop "requestsByToken filters correctly" $
-        forAll genTokenId $ \tid1 ->
+    prop "requestsByToken filters correctly"
+        $ forAll genTokenId
+        $ \tid1 ->
             forAll genTokenId $ \tid2 ->
-                tid1 /= tid2
-                    ==> forAll genTxIn $ \txin1 ->
+                tid1 /= tid2 ==>
+                    forAll genTxIn $ \txin1 ->
                         forAll genTxIn $ \txin2 ->
-                            txin1 /= txin2
-                                ==> forAll (genRequest tid1) $ \req1 ->
+                            txin1 /= txin2 ==>
+                                forAll (genRequest tid1) $ \req1 ->
                                     forAll (genRequest tid2) $ \req2 ->
                                         monadicIO $ do
                                             rs <- run mkMockRequests
@@ -198,8 +206,9 @@ requestsSpec = do
                                             r <- run $ requestsByToken rs tid1
                                             assert (r == [req1])
 
-    prop "requestsByToken on empty returns []" $
-        forAll genTokenId $ \tid ->
+    prop "requestsByToken on empty returns []"
+        $ forAll genTokenId
+        $ \tid ->
             monadicIO $ do
                 rs <- run mkMockRequests
                 r <- run $ requestsByToken rs tid
@@ -211,8 +220,9 @@ checkpointsSpec = do
         cp <- mkMockCheckpoints
         getCheckpoint cp `shouldReturn` Nothing
 
-    prop "put/get round-trip" $
-        forAll genSlotNo $ \s ->
+    prop "put/get round-trip"
+        $ forAll genSlotNo
+        $ \s ->
             forAll genBlockId $ \b ->
                 monadicIO $ do
                     cp <- run mkMockCheckpoints
@@ -220,8 +230,9 @@ checkpointsSpec = do
                     r <- run $ getCheckpoint cp
                     assert (r == Just (s, b))
 
-    prop "put overwrites previous" $
-        forAll genSlotNo $ \s1 ->
+    prop "put overwrites previous"
+        $ forAll genSlotNo
+        $ \s1 ->
             forAll genBlockId $ \b1 ->
                 forAll genSlotNo $ \s2 ->
                     forAll genBlockId $ \b2 ->

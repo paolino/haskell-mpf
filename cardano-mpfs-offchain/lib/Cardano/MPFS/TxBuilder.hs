@@ -1,8 +1,7 @@
-{- |
-Module      : Cardano.MPFS.TxBuilder
-Description : Transaction construction interface
-License     : Apache-2.0
--}
+-- |
+-- Module      : Cardano.MPFS.TxBuilder
+-- Description : Transaction construction interface
+-- License     : Apache-2.0
 module Cardano.MPFS.TxBuilder
     ( -- * Transaction builder interface
       TxBuilder (..)
@@ -15,8 +14,8 @@ import Cardano.Ledger.Api.Tx (Tx)
 import Cardano.MPFS.Types
     ( Addr
     , ConwayEra
-    , TxIn
     , TokenId
+    , TxIn
     )
 
 -- | Interface for constructing transactions for

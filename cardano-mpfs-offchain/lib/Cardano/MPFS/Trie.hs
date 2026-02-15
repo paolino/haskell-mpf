@@ -1,10 +1,9 @@
 {-# LANGUAGE RankNTypes #-}
 
-{- |
-Module      : Cardano.MPFS.Trie
-Description : Per-token MPF trie management interface
-License     : Apache-2.0
--}
+-- |
+-- Module      : Cardano.MPFS.Trie
+-- Description : Per-token MPF trie management interface
+-- License     : Apache-2.0
 module Cardano.MPFS.Trie
     ( -- * Trie manager
       TrieManager (..)

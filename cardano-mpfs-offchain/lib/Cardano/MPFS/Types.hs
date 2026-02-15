@@ -1,13 +1,12 @@
 {-# LANGUAGE DataKinds #-}
 
-{- |
-Module      : Cardano.MPFS.Types
-Description : Core domain types for the MPFS offchain service
-License     : Apache-2.0
-
-Re-exports ledger types and defines MPFS-specific domain
-types aligned with the on-chain Aiken validators.
--}
+-- |
+-- Module      : Cardano.MPFS.Types
+-- Description : Core domain types for the MPFS offchain service
+-- License     : Apache-2.0
+--
+-- Re-exports ledger types and defines MPFS-specific domain
+-- types aligned with the on-chain Aiken validators.
 module Cardano.MPFS.Types
     ( -- * Ledger re-exports
       ConwayEra

@@ -1,8 +1,7 @@
-{- |
-Module      : Cardano.MPFS.Provider
-Description : Blockchain query interface
-License     : Apache-2.0
--}
+-- |
+-- Module      : Cardano.MPFS.Provider
+-- Description : Blockchain query interface
+-- License     : Apache-2.0
 module Cardano.MPFS.Provider
     ( -- * Provider interface
       Provider (..)
