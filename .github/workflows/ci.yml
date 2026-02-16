@@ -19,8 +19,10 @@ jobs:
         with:
           cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
 
-      - name: Build and test
-        run: nix build .#unit-tests --quiet
+      - name: Build and run tests
+        run: |
+          nix build .#unit-tests --quiet
+          ./result/bin/unit-tests
 
       - name: Build offchain interfaces
         run: nix build .#cardano-mpfs-offchain --quiet
