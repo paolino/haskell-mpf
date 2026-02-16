@@ -5,6 +5,10 @@
 --
 -- Serializes 'MPFProof' to the CBOR/PlutusData format
 -- expected by the Aiken on-chain validator.
+--
+-- The encoding uses indefinite-length CBOR lists and
+-- bytestrings to match the reference TypeScript
+-- implementation byte-for-byte.
 module Cardano.MPFS.Proof
     ( -- * Serialization
       serializeProof
@@ -25,6 +29,7 @@ import MPF.Hashes
     ( MPFHash
     , merkleProof
     , nibbleBytes
+    , packHexKey
     , renderMPFHash
     )
 import MPF.Interface (HexDigit (..))
@@ -35,61 +40,97 @@ import MPF.Proof.Insertion
 
 -- | Serialize an 'MPFProof' to Aiken-compatible
 -- PlutusData CBOR bytes.
+--
+-- The output is byte-identical to the TypeScript
+-- reference @proof.toCBOR()@.
 serializeProof :: MPFProof MPFHash -> ByteString
 serializeProof MPFProof{mpfProofSteps} =
     BL.toStrict
         . toLazyByteString
-        $ cborList (map encodeStep mpfProofSteps)
+        $ cborBeginList
+            <> mconcat
+                -- Steps are stored leaf-to-root for
+                -- foldl'; CBOR needs root-to-leaf.
+                (map encodeStep (reverse mpfProofSteps))
+            <> cborEnd
 
 -- | Encode a single proof step as PlutusData CBOR.
 encodeStep :: MPFProofStep MPFHash -> Builder
-encodeStep (ProofStepBranch{psbJump, psbPosition, psbSiblingHashes}) =
-    -- Aiken: Branch { skip, neighbors }
-    -- Constr 0 [I skip, B neighbors]
-    let skip = length psbJump
-        sparseChildren = buildSparse psbSiblingHashes
-        pos = fromIntegral (unHexDigit psbPosition)
-        neighbors =
-            mconcat
-                $ map renderMPFHash
-                $ merkleProof sparseChildren pos
-    in  cborConstr 0 [cborInt skip, cborBytes neighbors]
+encodeStep
+    ( ProofStepBranch
+            { psbJump
+            , psbPosition
+            , psbSiblingHashes
+            }
+        ) =
+        -- Aiken: Branch { skip, neighbors }
+        -- tag 121 [ skip, indef-bytes neighbors ]
+        let skip = length psbJump
+            sparseChildren =
+                buildSparse psbSiblingHashes
+            pos =
+                fromIntegral (unHexDigit psbPosition)
+            neighborHashes =
+                map renderMPFHash
+                    $ merkleProof sparseChildren pos
+            -- 4 × 32 = 128 bytes, split into two
+            -- 64-byte chunks (matching TypeScript)
+            allBytes = mconcat neighborHashes
+            (chunk1, chunk2) = B.splitAt 64 allBytes
+        in  cborTag 121
+                <> cborBeginList
+                <> cborInt skip
+                <> cborBeginBytes
+                <> cborBytes chunk1
+                <> cborBytes chunk2
+                <> cborEnd
+                <> cborEnd
 encodeStep
     ( ProofStepFork
-            { psfPrefixLen
+            { psfBranchJump
             , psfNeighborPrefix
             , psfNeighborIndex
             , psfMerkleRoot
             }
         ) =
         -- Aiken: Fork { skip, neighbor }
-        -- neighbor = Constr 0 [I nibble, B prefix, B root]
-        let skip = psfPrefixLen
+        -- tag 122 [ skip, tag 121 [ nibble, prefix,
+        --                           root ] ]
+        let skip = length psfBranchJump
             nibble =
-                fromIntegral (unHexDigit psfNeighborIndex)
+                fromIntegral
+                    (unHexDigit psfNeighborIndex)
             prefix = nibbleBytes psfNeighborPrefix
             root = renderMPFHash psfMerkleRoot
-            neighbor =
-                cborConstr
-                    0
-                    [ cborInt nibble
-                    , cborBytes prefix
-                    , cborBytes root
-                    ]
-        in  cborConstr 1 [cborInt skip, neighbor]
+        in  cborTag 122
+                <> cborBeginList
+                <> cborInt skip
+                <> cborTag 121
+                <> cborBeginList
+                <> cborInt nibble
+                <> cborBytes prefix
+                <> cborBytes root
+                <> cborEnd
+                <> cborEnd
 encodeStep
     ( ProofStepLeaf
-            { pslPrefixLen
+            { pslBranchJump
             , pslNeighborKeyPath
             , pslNeighborValueDigest
             }
         ) =
         -- Aiken: Leaf { skip, key, value }
-        -- Constr 2 [I skip, B key, B value]
-        let skip = pslPrefixLen
-            key = nibbleBytes pslNeighborKeyPath
-            value = renderMPFHash pslNeighborValueDigest
-        in  cborConstr 2 [cborInt skip, cborBytes key, cborBytes value]
+        -- tag 123 [ skip, key, value ]
+        let skip = length pslBranchJump
+            key = packHexKey pslNeighborKeyPath
+            value =
+                renderMPFHash pslNeighborValueDigest
+        in  cborTag 123
+                <> cborBeginList
+                <> cborInt skip
+                <> cborBytes key
+                <> cborBytes value
+                <> cborEnd
 
 -- | Build a sparse 16-element array from sibling
 -- hashes for 'merkleProof'.
@@ -103,28 +144,37 @@ buildSparse siblings =
 
 -- ----------------------------------------------------------
 -- Minimal CBOR encoding (PlutusData subset)
+--
+-- Uses indefinite-length encoding to match the
+-- reference TypeScript implementation byte-for-byte.
 -- ----------------------------------------------------------
 
--- | CBOR tag for small Plutus constructors (0-6).
--- Tag = 121 + n, encoded as major type 6 one-byte.
-cborConstr :: Int -> [Builder] -> Builder
-cborConstr n fields =
-    cborTag (121 + n) <> cborList fields
-
--- | CBOR tag (major type 6), value 24-255 range.
+-- | CBOR tag (major type 6).
 cborTag :: Int -> Builder
-cborTag n = word8 0xd8 <> word8 (fromIntegral n)
+cborTag n
+    | n < 24 = word8 (0xc0 + fromIntegral n)
+    | n < 256 =
+        word8 0xd8 <> word8 (fromIntegral n)
+    | otherwise =
+        error "cborTag: value too large"
 
--- | CBOR definite-length array (major type 4).
-cborList :: [Builder] -> Builder
-cborList items =
-    cborMajor 4 (length items) <> mconcat items
+-- | Begin an indefinite-length CBOR list.
+cborBeginList :: Builder
+cborBeginList = word8 0x9f
+
+-- | Begin an indefinite-length CBOR bytestring.
+cborBeginBytes :: Builder
+cborBeginBytes = word8 0x5f
+
+-- | End an indefinite-length CBOR item.
+cborEnd :: Builder
+cborEnd = word8 0xff
 
 -- | CBOR non-negative integer (major type 0).
 cborInt :: Int -> Builder
 cborInt = cborMajor 0
 
--- | CBOR bytestring (major type 2).
+-- | CBOR definite-length bytestring (major type 2).
 cborBytes :: ByteString -> Builder
 cborBytes bs =
     cborMajor 2 (B.length bs) <> byteString bs

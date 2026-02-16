@@ -109,9 +109,9 @@ computeLeafHash suffix valueDigest =
             | otherwise ->
                 (B.pack [0x00, d], packHexKey ds)
 
--- | Compute merkle root of a sparse 16-element array
--- Uses pairwise hashing to reduce to single value
--- Missing children are represented as nullHash
+-- | Compute merkle root of a sparse array of hashes.
+-- Uses pairwise hashing to reduce to a single value.
+-- Missing children are represented as 'nullHash'.
 computeMerkleRoot :: [Maybe MPFHash] -> MPFHash
 computeMerkleRoot children =
     let
