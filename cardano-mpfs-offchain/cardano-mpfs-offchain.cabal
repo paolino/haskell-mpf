@@ -26,17 +26,17 @@ library
   default-language: GHC2021
   hs-source-dirs:   lib
   build-depends:
-    , base                       >=4.18 && <5
-    , bytestring                 >=0.11 && <0.13
+    , base                                   >=4.18 && <5
+    , bytestring                             >=0.11 && <0.13
     , cardano-crypto-class
     , cardano-ledger-api
     , cardano-ledger-binary
     , cardano-ledger-conway
     , cardano-ledger-core
     , cardano-ledger-mary
-    , containers                 >=0.6  && <0.8
-    , haskell-mpfs
-    , haskell-mpfs:mpf-test-lib
+    , containers                             >=0.6  && <0.8
+    , merkle-patricia-forestry
+    , merkle-patricia-forestry:mpf-test-lib
 
   exposed-modules:
     Cardano.MPFS.Context
@@ -70,10 +70,10 @@ test-suite unit-tests
     , cardano-ledger-core
     , cardano-mpfs-offchain
     , containers
-    , haskell-mpfs
-    , haskell-mpfs:mpf-test-lib
-    , hspec                      >=2.11 && <2.12
-    , QuickCheck                 >=2.14 && <2.18
+    , hspec                                  >=2.11 && <2.12
+    , merkle-patricia-forestry
+    , merkle-patricia-forestry:mpf-test-lib
+    , QuickCheck                             >=2.14 && <2.18
 
   other-modules:
     Cardano.MPFS.Generators

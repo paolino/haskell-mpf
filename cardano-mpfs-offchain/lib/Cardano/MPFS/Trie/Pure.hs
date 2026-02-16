@@ -2,7 +2,7 @@
 
 -- |
 -- Module      : Cardano.MPFS.Trie.Pure
--- Description : Pure in-memory Trie backed by haskell-mpfs
+-- Description : Pure in-memory Trie backed by merkle-patricia-forestry
 -- License     : Apache-2.0
 --
 -- Provides a 'Trie IO' implementation backed by an
