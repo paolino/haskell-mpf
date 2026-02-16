@@ -31,12 +31,12 @@ let
       pkgs.asciinema
     ];
     shellHook = ''
-      echo "Entering haskell-mpfs dev shell"
+      echo "Entering merkle-patricia-forestry dev shell"
     '';
   };
 
   mkProject = ctx@{ lib, pkgs, ... }: {
-    name = "haskell-mpfs";
+    name = "merkle-patricia-forestry";
     src = ./..;
     compiler-nix-name = "ghc984";
     shell = shell { inherit pkgs; };
@@ -49,10 +49,10 @@ let
 in {
   devShells.default = project.shell;
   inherit project;
-  packages.haskell-mpfs =
-    project.hsPkgs.haskell-mpfs.components.library;
+  packages.merkle-patricia-forestry =
+    project.hsPkgs.merkle-patricia-forestry.components.library;
   packages.unit-tests =
-    project.hsPkgs.haskell-mpfs.components.tests.unit-tests;
+    project.hsPkgs.merkle-patricia-forestry.components.tests.unit-tests;
   packages.cardano-mpfs-offchain =
     project.hsPkgs.cardano-mpfs-offchain.components.library;
   packages.offchain-tests =

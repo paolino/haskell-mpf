@@ -165,7 +165,7 @@ trieSpec newTrie = do
         isNothing mProof `shouldBe` True
 
 -- -----------------------------------------------------------------
--- Properties (via haskell-mpfs pure backend)
+-- Properties (via merkle-patricia-forestry pure backend)
 -- -----------------------------------------------------------------
 
 propertySpec :: Spec

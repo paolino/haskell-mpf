@@ -49,7 +49,7 @@
               inherit (project.packages)
                 unit-tests offchain-tests
                 cardano-mpfs-offchain;
-              default = project.packages.haskell-mpfs;
+              default = project.packages.merkle-patricia-forestry;
             };
             inherit (project) devShells;
           };

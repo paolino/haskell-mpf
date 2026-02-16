@@ -20,7 +20,7 @@ resolution surprises.
 
 ```mermaid
 flowchart TD
-    http["haskell-mpfs — HTTP service (Servant)"]
+    http["mpfs-service — HTTP service (Servant)"]
     mpf["MPF trie (haskell-mpf) ✓ DONE\nProofs, insertion, deletion"]
     txb["Transaction building interface\nCoin selection, fee estimation\n(record of functions)"]
     csmt["cardano-utxo-csmt (embedded)\nUTxO queries via address prefix\nMithril bootstrap, ChainSync\n(replaces Yaci Store)"]
@@ -224,7 +224,7 @@ cleanup (close connections, flush DB) on exit.
 
 ### 1. MPF Library ✓ DONE
 
-Repository: `paolino/haskell-mpf` (this repo, to be renamed haskell-mpfs)
+Repository: `paolino/cardano-mpfs-offchain` (package: merkle-patricia-forestry)
 
 - 16-ary Merkle Patricia Forestry
 - Blake2b-256, Aiken-compatible
