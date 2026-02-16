@@ -12,15 +12,13 @@
 module Data.Serialize.ExtraSpec (spec) where
 
 import Data.ByteString qualified as B
-import Data.Serialize (putWord8)
+import Data.Serialize (getWord8, putWord8)
 import Data.Serialize.Extra
     ( evalGetM
     , evalPutM
     , unsafeEvalGet
     )
 import Test.Hspec
-
-import Data.Serialize (getWord8)
 
 spec :: Spec
 spec = describe "Data.Serialize.Extra" $ do
