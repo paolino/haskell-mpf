@@ -18,7 +18,9 @@ build-type:    Simple
 common warnings
   ghc-options:        -Wall
   default-extensions:
+    DerivingStrategies
     DuplicateRecordFields
+    RecordWildCards
     StrictData
 
 library
@@ -26,6 +28,7 @@ library
   default-language: GHC2021
   hs-source-dirs:   lib
   build-depends:
+    , aeson                                  >=2.1  && <2.3
     , base                                   >=4.18 && <5
     , bytestring                             >=0.11 && <0.13
     , cardano-crypto-class
@@ -36,12 +39,18 @@ library
     , cardano-ledger-mary
     , cardano-strict-containers
     , containers                             >=0.6  && <0.8
+    , crypton
+    , memory
     , merkle-patricia-forestry
     , merkle-patricia-forestry:mpf-test-lib
     , microlens
+    , plutus-core
+    , plutus-tx
+    , text                                   >=2.0  && <2.2
 
   exposed-modules:
     Cardano.MPFS.Balance
+    Cardano.MPFS.Blueprint
     Cardano.MPFS.Context
     Cardano.MPFS.Indexer
     Cardano.MPFS.Mock.Context
@@ -50,6 +59,7 @@ library
     Cardano.MPFS.Mock.State
     Cardano.MPFS.Mock.Submitter
     Cardano.MPFS.Mock.TxBuilder
+    Cardano.MPFS.OnChain
     Cardano.MPFS.Proof
     Cardano.MPFS.Provider
     Cardano.MPFS.State
@@ -78,11 +88,15 @@ test-suite unit-tests
     , merkle-patricia-forestry
     , merkle-patricia-forestry:mpf-test-lib
     , microlens
+    , plutus-core
+    , plutus-tx
     , QuickCheck                             >=2.14 && <2.18
+    , text
 
   other-modules:
     Cardano.MPFS.BalanceSpec
     Cardano.MPFS.Generators
+    Cardano.MPFS.OnChainSpec
     Cardano.MPFS.ProofSpec
     Cardano.MPFS.StateSpec
     Cardano.MPFS.TrieManagerSpec

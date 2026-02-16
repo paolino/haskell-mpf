@@ -13,6 +13,7 @@ import Cardano.MPFS.Trie.PureManager
     )
 
 import Cardano.MPFS.BalanceSpec qualified as BalanceSpec
+import Cardano.MPFS.OnChainSpec qualified as OnChainSpec
 import Cardano.MPFS.ProofSpec qualified as ProofSpec
 import Cardano.MPFS.StateSpec qualified as StateSpec
 import Cardano.MPFS.TrieManagerSpec qualified as TrieManagerSpec
@@ -28,3 +29,4 @@ main = hspec $ do
         mkMockRequests
         mkMockCheckpoints
     ProofSpec.spec
+    OnChainSpec.spec
