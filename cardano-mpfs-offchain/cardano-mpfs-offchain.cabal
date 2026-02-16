@@ -47,6 +47,7 @@ library
     Cardano.MPFS.Mock.State
     Cardano.MPFS.Mock.Submitter
     Cardano.MPFS.Mock.TxBuilder
+    Cardano.MPFS.Proof
     Cardano.MPFS.Provider
     Cardano.MPFS.State
     Cardano.MPFS.Submitter
@@ -76,6 +77,7 @@ test-suite unit-tests
 
   other-modules:
     Cardano.MPFS.Generators
+    Cardano.MPFS.ProofSpec
     Cardano.MPFS.StateSpec
     Cardano.MPFS.TrieManagerSpec
     Cardano.MPFS.TrieSpec

@@ -17,6 +17,13 @@ module MPF.Hashes
     , computeMerkleRoot
     , fromHexKVHashes
     , byteStringToHexKey'
+
+      -- * Key Encoding
+    , packHexKey
+    , nibbleBytes
+
+      -- * Merkle Proof
+    , merkleProof
     )
 where
 
@@ -147,3 +154,39 @@ fromHexKVHashes =
 -- | Alias for byteStringToHexKey for convenient import
 byteStringToHexKey' :: ByteString -> HexKey
 byteStringToHexKey' = byteStringToHexKey
+
+-- | SMT proof: 4 intermediate hashes that, together with the
+-- element at position @me@, reconstruct the merkle root.
+--
+-- Binary search through the 16-element pairwise reduction
+-- tree, collecting the opposite subtree's root at each of
+-- 4 levels (pivot starts at 8, halves each step).
+merkleProof :: [Maybe MPFHash] -> Int -> [MPFHash]
+merkleProof children me =
+    let
+        padded = take 16 $ children ++ repeat Nothing
+        hashes = map (maybe nullHash id) padded
+    in
+        go hashes me 8 []
+  where
+    go _ _ 0 acc = reverse acc
+    go hs pos pivot acc =
+        let
+            (left, right) = splitAt pivot hs
+        in
+            if pos < pivot
+                then
+                    go
+                        left
+                        pos
+                        (pivot `div` 2)
+                        (subtreeRoot right : acc)
+                else
+                    go
+                        right
+                        (pos - pivot)
+                        (pivot `div` 2)
+                        (subtreeRoot left : acc)
+
+    subtreeRoot :: [MPFHash] -> MPFHash
+    subtreeRoot = pairwiseReduce

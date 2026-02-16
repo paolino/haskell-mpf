@@ -1,0 +1,145 @@
+-- |
+-- Module      : Cardano.MPFS.Proof
+-- Description : Aiken-compatible proof serialization
+-- License     : Apache-2.0
+--
+-- Serializes 'MPFProof' to the CBOR/PlutusData format
+-- expected by the Aiken on-chain validator.
+module Cardano.MPFS.Proof
+    ( -- * Serialization
+      serializeProof
+    ) where
+
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as B
+import Data.ByteString.Builder
+    ( Builder
+    , byteString
+    , toLazyByteString
+    , word8
+    )
+import Data.ByteString.Lazy qualified as BL
+import Data.Map.Strict qualified as Map
+import Data.Word (Word8)
+import MPF.Hashes
+    ( MPFHash
+    , merkleProof
+    , nibbleBytes
+    , renderMPFHash
+    )
+import MPF.Interface (HexDigit (..))
+import MPF.Proof.Insertion
+    ( MPFProof (..)
+    , MPFProofStep (..)
+    )
+
+-- | Serialize an 'MPFProof' to Aiken-compatible
+-- PlutusData CBOR bytes.
+serializeProof :: MPFProof MPFHash -> ByteString
+serializeProof MPFProof{mpfProofSteps} =
+    BL.toStrict
+        . toLazyByteString
+        $ cborList (map encodeStep mpfProofSteps)
+
+-- | Encode a single proof step as PlutusData CBOR.
+encodeStep :: MPFProofStep MPFHash -> Builder
+encodeStep (ProofStepBranch{psbJump, psbPosition, psbSiblingHashes}) =
+    -- Aiken: Branch { skip, neighbors }
+    -- Constr 0 [I skip, B neighbors]
+    let skip = length psbJump
+        sparseChildren = buildSparse psbSiblingHashes
+        pos = fromIntegral (unHexDigit psbPosition)
+        neighbors =
+            mconcat
+                $ map renderMPFHash
+                $ merkleProof sparseChildren pos
+    in  cborConstr 0 [cborInt skip, cborBytes neighbors]
+encodeStep
+    ( ProofStepFork
+            { psfPrefixLen
+            , psfNeighborPrefix
+            , psfNeighborIndex
+            , psfMerkleRoot
+            }
+        ) =
+        -- Aiken: Fork { skip, neighbor }
+        -- neighbor = Constr 0 [I nibble, B prefix, B root]
+        let skip = psfPrefixLen
+            nibble =
+                fromIntegral (unHexDigit psfNeighborIndex)
+            prefix = nibbleBytes psfNeighborPrefix
+            root = renderMPFHash psfMerkleRoot
+            neighbor =
+                cborConstr
+                    0
+                    [ cborInt nibble
+                    , cborBytes prefix
+                    , cborBytes root
+                    ]
+        in  cborConstr 1 [cborInt skip, neighbor]
+encodeStep
+    ( ProofStepLeaf
+            { pslPrefixLen
+            , pslNeighborKeyPath
+            , pslNeighborValueDigest
+            }
+        ) =
+        -- Aiken: Leaf { skip, key, value }
+        -- Constr 2 [I skip, B key, B value]
+        let skip = pslPrefixLen
+            key = nibbleBytes pslNeighborKeyPath
+            value = renderMPFHash pslNeighborValueDigest
+        in  cborConstr 2 [cborInt skip, cborBytes key, cborBytes value]
+
+-- | Build a sparse 16-element array from sibling
+-- hashes for 'merkleProof'.
+buildSparse
+    :: [(HexDigit, MPFHash)] -> [Maybe MPFHash]
+buildSparse siblings =
+    let m = Map.fromList siblings
+    in  [ Map.lookup (HexDigit n) m
+        | n <- [0 .. 15]
+        ]
+
+-- ----------------------------------------------------------
+-- Minimal CBOR encoding (PlutusData subset)
+-- ----------------------------------------------------------
+
+-- | CBOR tag for small Plutus constructors (0-6).
+-- Tag = 121 + n, encoded as major type 6 one-byte.
+cborConstr :: Int -> [Builder] -> Builder
+cborConstr n fields =
+    cborTag (121 + n) <> cborList fields
+
+-- | CBOR tag (major type 6), value 24-255 range.
+cborTag :: Int -> Builder
+cborTag n = word8 0xd8 <> word8 (fromIntegral n)
+
+-- | CBOR definite-length array (major type 4).
+cborList :: [Builder] -> Builder
+cborList items =
+    cborMajor 4 (length items) <> mconcat items
+
+-- | CBOR non-negative integer (major type 0).
+cborInt :: Int -> Builder
+cborInt = cborMajor 0
+
+-- | CBOR bytestring (major type 2).
+cborBytes :: ByteString -> Builder
+cborBytes bs =
+    cborMajor 2 (B.length bs) <> byteString bs
+
+-- | Encode a CBOR major type + argument.
+cborMajor :: Word8 -> Int -> Builder
+cborMajor major n
+    | n < 24 =
+        word8 (major * 32 + fromIntegral n)
+    | n < 256 =
+        word8 (major * 32 + 24)
+            <> word8 (fromIntegral n)
+    | n < 65536 =
+        word8 (major * 32 + 25)
+            <> word8 (fromIntegral (n `div` 256))
+            <> word8 (fromIntegral (n `mod` 256))
+    | otherwise =
+        error "cborMajor: value too large"
