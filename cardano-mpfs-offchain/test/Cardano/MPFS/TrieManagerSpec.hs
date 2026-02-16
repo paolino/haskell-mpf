@@ -24,9 +24,6 @@ import Cardano.MPFS.Trie
     ( Trie (..)
     , TrieManager (..)
     )
-import Cardano.MPFS.Trie.PureManager
-    ( mkPureTrieManager
-    )
 import Cardano.MPFS.Types
     ( AssetName (..)
     , Root (..)
@@ -49,20 +46,21 @@ tokenB = TokenId (AssetName (SBS.pack [4, 5, 6]))
 -- Specs
 -- -----------------------------------------------------------------
 
-spec :: Spec
-spec = describe "TrieManager" trieManagerSpec
+spec :: IO (TrieManager IO) -> Spec
+spec newTM =
+    describe "TrieManager" $ trieManagerSpec newTM
 
-trieManagerSpec :: Spec
-trieManagerSpec = do
+trieManagerSpec :: IO (TrieManager IO) -> Spec
+trieManagerSpec newTM = do
     it "createTrie/withTrie round-trip" $ do
-        tm <- mkPureTrieManager
+        tm <- newTM
         createTrie tm tokenA
         withTrie tm tokenA $ \trie -> do
             root <- getRoot trie
             unRoot root `shouldBe` B.empty
 
     it "withTrie on missing trie throws" $ do
-        tm <- mkPureTrieManager
+        tm <- newTM
         result <-
             try
                 $ withTrie tm tokenA
@@ -77,7 +75,7 @@ trieManagerSpec = do
                     \missing trie"
 
     it "deleteTrie removes trie" $ do
-        tm <- mkPureTrieManager
+        tm <- newTM
         createTrie tm tokenA
         deleteTrie tm tokenA
         result <-
@@ -94,7 +92,7 @@ trieManagerSpec = do
                     \delete"
 
     it "per-token isolation" $ do
-        tm <- mkPureTrieManager
+        tm <- newTM
         createTrie tm tokenA
         createTrie tm tokenB
         -- Insert into tokenA only
@@ -106,7 +104,7 @@ trieManagerSpec = do
             unRoot root `shouldBe` B.empty
 
     it "createTrie overwrites existing" $ do
-        tm <- mkPureTrieManager
+        tm <- newTM
         createTrie tm tokenA
         withTrie tm tokenA $ \trie ->
             void $ insert trie "key" "value"
@@ -117,7 +115,7 @@ trieManagerSpec = do
             unRoot root `shouldBe` B.empty
 
     it "withTrie insert reflects in root" $ do
-        tm <- mkPureTrieManager
+        tm <- newTM
         createTrie tm tokenA
         withTrie tm tokenA $ \trie -> do
             root <- insert trie "hello" "world"
@@ -125,6 +123,6 @@ trieManagerSpec = do
                 `shouldSatisfy` (not . B.null)
 
     it "deleteTrie on empty doesn't crash" $ do
-        tm <- mkPureTrieManager
+        tm <- newTM
         deleteTrie tm tokenA
         pure ()

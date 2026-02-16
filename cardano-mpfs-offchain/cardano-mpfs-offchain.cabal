@@ -57,11 +57,11 @@ library
     Cardano.MPFS.Types
 
 test-suite unit-tests
-  import:             warnings
-  type:               exitcode-stdio-1.0
-  default-language:   GHC2021
-  hs-source-dirs:     test
-  main-is:            main.hs
+  import:           warnings
+  type:             exitcode-stdio-1.0
+  default-language: GHC2021
+  hs-source-dirs:   test
+  main-is:          main.hs
   build-depends:
     , base
     , bytestring
@@ -74,7 +74,6 @@ test-suite unit-tests
     , hspec                      >=2.11 && <2.12
     , QuickCheck                 >=2.14 && <2.18
 
-  build-tool-depends: hspec-discover:hspec-discover >=2.11 && <2.12
   other-modules:
     Cardano.MPFS.Generators
     Cardano.MPFS.StateSpec

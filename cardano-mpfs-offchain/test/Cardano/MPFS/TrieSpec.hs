@@ -6,6 +6,10 @@
 -- License     : Apache-2.0
 module Cardano.MPFS.TrieSpec (spec) where
 
+-- NOTE: This module is parameterized — 'spec' takes an
+-- @IO (Trie IO)@ constructor so the same tests can run
+-- against any backend (pure, RocksDB, …).
+
 import Control.Monad (forM_)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
@@ -46,13 +50,11 @@ import MPF.Test.Lib
     , fruitsTestData
     , getRootHashM
     , insertByteStringM
-    , proofMPFM
     , runMPFPure'
     , verifyMPFM
     )
 
-import Cardano.MPFS.Trie (Proof (..), Trie (..))
-import Cardano.MPFS.Trie.Pure (mkPureTrie)
+import Cardano.MPFS.Trie (Trie (..))
 import Cardano.MPFS.Types (Root (..))
 
 -- -----------------------------------------------------------------
@@ -89,40 +91,41 @@ genUniqueKVs = do
 -- Specs
 -- -----------------------------------------------------------------
 
-spec :: Spec
-spec = do
-    describe "Trie" trieSpec
-    describe "Trie test vectors" testVectorSpec
+spec :: IO (Trie IO) -> Spec
+spec newTrie = do
+    describe "Trie" $ trieSpec newTrie
+    describe "Trie test vectors"
+        $ testVectorSpec newTrie
     describe "Trie properties" propertySpec
 
-trieSpec :: Spec
-trieSpec = do
+trieSpec :: IO (Trie IO) -> Spec
+trieSpec newTrie = do
     it "insert/getRoot produces non-empty root" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         root <- insert trie "hello" "world"
         unRoot root `shouldSatisfy` (not . B.null)
 
     it "insert/getRoot is deterministic" $ do
-        trie1 <- mkPureTrie
-        trie2 <- mkPureTrie
+        trie1 <- newTrie
+        trie2 <- newTrie
         root1 <- insert trie1 "hello" "world"
         root2 <- insert trie2 "hello" "world"
         root1 `shouldBe` root2
 
     it "insert/lookup finds the key" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         _ <- insert trie "hello" "world"
         mVal <-
             Cardano.MPFS.Trie.lookup trie "hello"
         mVal `shouldSatisfy` isJust
 
     it "lookup on empty returns Nothing" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         Cardano.MPFS.Trie.lookup trie "missing"
             `shouldReturn` Nothing
 
     it "delete removes key" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         _ <- insert trie "hello" "world"
         _ <- Cardano.MPFS.Trie.delete trie "hello"
         mVal <-
@@ -130,7 +133,7 @@ trieSpec = do
         mVal `shouldBe` Nothing
 
     it "delete preserves siblings" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         _ <- insert trie "keep" "value1"
         _ <- insert trie "remove" "value2"
         _ <-
@@ -140,24 +143,24 @@ trieSpec = do
         mVal `shouldSatisfy` isJust
 
     it "getRoot on empty returns empty root" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         root <- getRoot trie
         unRoot root `shouldBe` B.empty
 
     it "getProof for existing key" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         _ <- insert trie "hello" "world"
         mProof <- getProof trie "hello"
         isJust mProof `shouldBe` True
 
     it "getProof for missing key" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         _ <- insert trie "hello" "world"
         mProof <- getProof trie "nonexistent"
         isNothing mProof `shouldBe` True
 
     it "getProof on empty trie" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         mProof <- getProof trie "any"
         isNothing mProof `shouldBe` True
 
@@ -266,10 +269,10 @@ propSingleInsertRoot =
 -- Test vectors (Aiken compatibility)
 -- -----------------------------------------------------------------
 
-testVectorSpec :: Spec
-testVectorSpec = do
+testVectorSpec :: IO (Trie IO) -> Spec
+testVectorSpec newTrie = do
     it "single apple root hash" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         root <-
             insert
                 trie
@@ -279,7 +282,7 @@ testVectorSpec = do
             `shouldBe` "93c4ed2d36f2409c38b8112d70c23eaf92eeb325b5098c0195be7e5cfaf7d824"
 
     it "apple + apricot root hash" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         _ <-
             insert
                 trie
@@ -294,7 +297,7 @@ testVectorSpec = do
             `shouldBe` "d9e614a87dff7b38d59706f00085d1b23f8c3e32ab9f5c39dbfa090412012003"
 
     it "apple + banana root hash" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         _ <-
             insert
                 trie
@@ -309,7 +312,7 @@ testVectorSpec = do
             `shouldBe` "6a00036a5182ad02098cc99e00ab679263571dbec847b12aa7abde525affbe39"
 
     it "3 fruits root hash" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         _ <-
             insert
                 trie
@@ -329,7 +332,7 @@ testVectorSpec = do
             `shouldBe` "3b9c8a23238aeef2bee260daec21acfdad07cb7d8f23bb5b97147323ef65ff5f"
 
     it "full fruits dataset root hash" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         forM_ fruitsTestData
             $ uncurry (insert trie)
         root <- getRoot trie
@@ -337,7 +340,7 @@ testVectorSpec = do
             `shouldBe` encodeHex expectedFullTrieRoot
 
     it "proof verifies apple in full dataset" $ do
-        trie <- mkPureTrie
+        trie <- newTrie
         forM_ fruitsTestData
             $ uncurry (insert trie)
         mProof <- getProof trie "apple[uid: 58]"
