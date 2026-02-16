@@ -3,9 +3,10 @@
 module Cardano.MPFS.ProofSpec (spec) where
 
 import Cardano.MPFS.Proof (serializeProof)
-import Control.Monad (forM_)
+import Control.Monad (forM, forM_)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
+import Data.List (nubBy)
 import MPF.Hashes
     ( MPFHash
     , computeMerkleRoot
@@ -15,17 +16,22 @@ import MPF.Hashes
     , nullHash
     , renderMPFHash
     )
-import MPF.Interface (byteStringToHexKey)
+import MPF.Interface
+    ( HexKey
+    , byteStringToHexKey
+    )
 import MPF.Proof.Insertion
     ( MPFProof (..)
     , MPFProofStep
     )
 import MPF.Test.Lib
-    ( encodeHex
+    ( deleteMPFM
+    , encodeHex
     , foldMPFProof
     , fruitsTestData
     , getRootHashM
     , insertByteStringM
+    , insertMPFM
     , proofMPFM
     , runMPFPure'
     )
@@ -36,6 +42,16 @@ import Test.Hspec
     , shouldBe
     , shouldSatisfy
     )
+import Test.QuickCheck
+    ( Gen
+    , Property
+    , choose
+    , forAll
+    , listOf1
+    , property
+    , vectorOf
+    , (==>)
+    )
 
 spec :: Spec
 spec = do
@@ -44,31 +60,21 @@ spec = do
         -- merkleRoot reference vectors from helpers.test.js
         -- ------------------------------------------------
         describe "computeMerkleRoot (reference vectors)" $ do
-            it "1 NULL_HASH = all zeros" $ do
-                let r = computeMerkleRoot [Just nullHash]
-                encodeHex (renderMPFHash r)
-                    `shouldBe` "0000000000000000000000000000000000000000000000000000000000000000"
-
-            it "2 NULL_HASHes" $ do
+            it "16 NULL_HASHes" $ do
                 let r =
                         computeMerkleRoot
-                            $ replicate 2 (Just nullHash)
+                            $ replicate 16 (Just nullHash)
+                -- All nullHash → deterministic root
                 encodeHex (renderMPFHash r)
-                    `shouldBe` "0eb923b0cbd24df54401d998531feead35a47a99f4deed205de4af81120f9761"
+                    `shouldBe` "209155a276ca3c2417e3876971dd587dd64ed9fcb8ef1fd6e7589ef4255c967f"
 
-            it "4 NULL_HASHes" $ do
-                let r =
+            it "padding: fewer than 16 children pads with nullHash" $ do
+                -- Any input < 16 elements is padded to 16 with Nothing (= nullHash)
+                let r1 = computeMerkleRoot [Just nullHash]
+                    r16 =
                         computeMerkleRoot
-                            $ replicate 4 (Just nullHash)
-                encodeHex (renderMPFHash r)
-                    `shouldBe` "85c09af929492a871e4fae32d9d5c36e352471cd659bcdb61de08f1722acc3b1"
-
-            it "8 NULL_HASHes" $ do
-                let r =
-                        computeMerkleRoot
-                            $ replicate 8 (Just nullHash)
-                encodeHex (renderMPFHash r)
-                    `shouldBe` "b22df1a126b5ba4e33c16fd6157507610e55ffce20dae7ac44cae168a463612a"
+                            $ replicate 16 (Just nullHash)
+                r1 `shouldBe` r16
 
         -- ------------------------------------------------
         -- merkleProof reconstruction
@@ -76,11 +82,9 @@ spec = do
         describe "merkleProof" $ do
             it "produces 4 intermediate hashes" $ do
                 let children =
-                        map
-                            Just
-                            [ mkMPFHash (B.pack [i])
-                            | i <- [0 .. 15]
-                            ]
+                        [ Just (mkMPFHash (B.pack [i]))
+                        | i <- [0 .. 15]
+                        ]
                     result = merkleProof children 0
                 length result `shouldBe` 4
 
@@ -281,6 +285,181 @@ spec = do
                             B.head bs `shouldBe` 0x9f
                             -- Must end with 0xff (end marker)
                             B.last bs `shouldBe` 0xff
+
+        -- ------------------------------------------------
+        -- QuickCheck property tests
+        -- ------------------------------------------------
+        describe "properties" $ do
+            it
+                "proof exists and verifies for every inserted key"
+                $ property propPresence
+
+            it
+                "no proof for non-inserted keys"
+                $ property propAbsence
+
+            it
+                "no proof after deletion, siblings still verify"
+                $ property propAbsenceAfterDeletion
+
+            it "serialized proof has valid CBOR framing"
+                $ property propCborStructure
+
+-- ----------------------------------------------------------
+-- QuickCheck generators
+-- ----------------------------------------------------------
+
+-- | Random ByteString key.
+genKeyBytes :: Gen ByteString
+genKeyBytes = B.pack <$> listOf1 (choose (0, 255))
+
+-- | Random ByteString value.
+genValue :: Gen ByteString
+genValue = B.pack <$> listOf1 (choose (0, 255))
+
+-- | Hash-then-hex, matching insertByteStringM's key derivation.
+toHexKey :: ByteString -> HexKey
+toHexKey = byteStringToHexKey . renderMPFHash . mkMPFHash
+
+-- | Unique key-value pairs (unique by hashed key).
+genUniqueKVs :: Gen [(ByteString, ByteString)]
+genUniqueKVs = do
+    kvs <- listOf1 ((,) <$> genKeyBytes <*> genValue)
+    pure
+        $ nubBy
+            ( \(k1, _) (k2, _) ->
+                toHexKey k1 == toHexKey k2
+            )
+            kvs
+
+-- ----------------------------------------------------------
+-- Properties
+-- ----------------------------------------------------------
+
+-- | Every inserted key has a proof that folds to the root.
+propPresence :: Property
+propPresence = forAll genUniqueKVs $ \kvs ->
+    let kvHashed =
+            [ (toHexKey k, mkMPFHash v)
+            | (k, v) <- kvs
+            ]
+        (results, _) = runMPFPure' $ do
+            forM_ kvHashed $ uncurry insertMPFM
+            root <- getRootHashM
+            proofs <- forM kvHashed $ \(k, v) -> do
+                mp <- proofMPFM k
+                pure (v, mp)
+            pure (root, proofs)
+    in  case results of
+            (Just root, proofs) ->
+                all
+                    ( \(val, mp) -> case mp of
+                        Nothing -> False
+                        Just proof ->
+                            foldMPFProof mpfHashing val proof
+                                == root
+                    )
+                    proofs
+            _ -> False
+
+-- | A key never inserted has no proof.
+propAbsence :: Property
+propAbsence =
+    forAll
+        ( (,)
+            <$> genUniqueKVs
+            <*> genKeyBytes
+        )
+        $ \(kvs, extraKey) ->
+            let hexExtra = toHexKey extraKey
+                kvHashed =
+                    [ (toHexKey k, mkMPFHash v)
+                    | (k, v) <- kvs
+                    ]
+                notInserted =
+                    all
+                        ((/= hexExtra) . fst)
+                        kvHashed
+            in  notInserted ==>
+                    let (mProof, _) = runMPFPure' $ do
+                            forM_ kvHashed
+                                $ uncurry insertMPFM
+                            proofMPFM hexExtra
+                    in  case mProof of
+                            Nothing -> True
+                            Just _ -> False
+
+-- | After deletion, the deleted key has no proof;
+-- remaining keys still verify.
+propAbsenceAfterDeletion :: Property
+propAbsenceAfterDeletion =
+    forAll
+        (vectorOf 3 ((,) <$> genKeyBytes <*> genValue))
+        $ \rawKvs ->
+            let kvs =
+                    nubBy
+                        ( \(k1, _) (k2, _) ->
+                            toHexKey k1 == toHexKey k2
+                        )
+                        rawKvs
+            in  length kvs == 3 ==>
+                    let kvHashed =
+                            [ (toHexKey k, mkMPFHash v)
+                            | (k, v) <- kvs
+                            ]
+                        (delKey, survivors) =
+                            case kvHashed of
+                                (k, _) : rest ->
+                                    (k, rest)
+                                [] ->
+                                    error "empty kvHashed"
+                        (results, _) = runMPFPure' $ do
+                            forM_ kvHashed
+                                $ uncurry insertMPFM
+                            deleteMPFM delKey
+                            gone <- proofMPFM delKey
+                            root <- getRootHashM
+                            kept <-
+                                forM survivors
+                                    $ \(k, v) -> do
+                                        mp <- proofMPFM k
+                                        pure (v, mp)
+                            pure (gone, root, kept)
+                    in  case results of
+                            (Nothing, Just root, kept) ->
+                                all
+                                    ( \(val, mp) ->
+                                        case mp of
+                                            Nothing -> False
+                                            Just proof ->
+                                                foldMPFProof
+                                                    mpfHashing
+                                                    val
+                                                    proof
+                                                    == root
+                                    )
+                                    kept
+                            _ -> False
+
+-- | Serialized proof starts with 0x9f, ends with 0xff,
+-- and has length >= 2.
+propCborStructure :: Property
+propCborStructure = forAll genUniqueKVs $ \kvs ->
+    let kvHashed =
+            [ (toHexKey k, mkMPFHash v)
+            | (k, v) <- kvs
+            ]
+        (proofs, _) = runMPFPure' $ do
+            forM_ kvHashed $ uncurry insertMPFM
+            forM kvHashed $ \(k, _) -> proofMPFM k
+    in  all checkCbor proofs
+  where
+    checkCbor Nothing = False
+    checkCbor (Just proof) =
+        let bs = serializeProof proof
+        in  B.length bs >= 2
+                && B.head bs == 0x9f
+                && B.last bs == 0xff
 
 -- ----------------------------------------------------------
 -- Reference CBOR hex vectors from trie.test.js

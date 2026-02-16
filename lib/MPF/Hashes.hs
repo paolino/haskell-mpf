@@ -165,7 +165,7 @@ merkleProof :: [Maybe MPFHash] -> Int -> [MPFHash]
 merkleProof children me =
     let
         padded = take 16 $ children ++ repeat Nothing
-        hashes = map (maybe nullHash id) padded
+        hashes = map (fromMaybe nullHash) padded
     in
         go hashes me 8 []
   where
