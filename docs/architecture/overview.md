@@ -3,18 +3,12 @@
 ## System Stack
 
 ```mermaid
-block-beta
-    columns 1
-    block:http["HTTP Service (Servant)"]
-    end
-    block:mpf["MPF Trie (haskell-mpf)\nProofs, insertion, deletion"]
-    end
-    block:txb["Transaction Building Interface\nCoin selection, fee estimation\n(record of functions)"]
-    end
-    block:csmt["cardano-utxo-csmt (embedded)\nUTxO queries via address prefix\nMithril bootstrap, ChainSync"]
-    end
-    block:node["Node Client (node-to-client)\nLocal state query + tx submission"]
-    end
+flowchart TD
+    http["HTTP Service (Servant)"]
+    mpf["MPF Trie (haskell-mpf)\nProofs, insertion, deletion"]
+    txb["Transaction Building Interface\nCoin selection, fee estimation\n(record of functions)"]
+    csmt["cardano-utxo-csmt (embedded)\nUTxO queries via address prefix\nMithril bootstrap, ChainSync"]
+    node["Node Client (node-to-client)\nLocal state query + tx submission"]
 
     http --> mpf --> txb --> csmt --> node
 ```

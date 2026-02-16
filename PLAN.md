@@ -19,18 +19,12 @@ resolution surprises.
 ## Architecture
 
 ```mermaid
-block-beta
-    columns 1
-    block:http["haskell-mpfs — HTTP service (Servant)"]
-    end
-    block:mpf["MPF trie (haskell-mpf) ✓ DONE\nProofs, insertion, deletion"]
-    end
-    block:txb["Transaction building interface\nCoin selection, fee estimation\n(record of functions)"]
-    end
-    block:csmt["cardano-utxo-csmt (embedded)\nUTxO queries via address prefix\nMithril bootstrap, ChainSync\n(replaces Yaci Store)"]
-    end
-    block:node["Node client (node-to-client)\nLocal state query + tx submission"]
-    end
+flowchart TD
+    http["haskell-mpfs — HTTP service (Servant)"]
+    mpf["MPF trie (haskell-mpf) ✓ DONE\nProofs, insertion, deletion"]
+    txb["Transaction building interface\nCoin selection, fee estimation\n(record of functions)"]
+    csmt["cardano-utxo-csmt (embedded)\nUTxO queries via address prefix\nMithril bootstrap, ChainSync\n(replaces Yaci Store)"]
+    node["Node client (node-to-client)\nLocal state query + tx submission"]
 
     http --> mpf --> txb --> csmt --> node
 ```
