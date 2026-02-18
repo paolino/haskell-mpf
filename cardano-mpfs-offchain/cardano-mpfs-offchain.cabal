@@ -29,24 +29,38 @@ library
   hs-source-dirs:   lib
   build-depends:
     , aeson                                  >=2.1  && <2.3
+    , async
     , base                                   >=4.18 && <5
     , bytestring                             >=0.11 && <0.13
     , cardano-crypto-class
     , cardano-ledger-api
     , cardano-ledger-binary
+    , cardano-ledger-byron
     , cardano-ledger-conway
     , cardano-ledger-core
     , cardano-ledger-mary
     , cardano-strict-containers
     , containers                             >=0.6  && <0.8
+    , contra-tracer
     , crypton
     , memory
     , merkle-patricia-forestry
     , merkle-patricia-forestry:mpf-test-lib
     , microlens
+    , network-mux
+    , ouroboros-consensus
+    , ouroboros-consensus-cardano
+    , ouroboros-consensus-protocol
+    , ouroboros-network
+    , ouroboros-network-api
+    , ouroboros-network-framework
+    , ouroboros-network-protocols
     , plutus-core
     , plutus-tx
+    , serialise
+    , stm
     , text                                   >=2.0  && <2.2
+    , typed-protocols
 
   exposed-modules:
     Cardano.MPFS.Balance
@@ -59,6 +73,11 @@ library
     Cardano.MPFS.Mock.State
     Cardano.MPFS.Mock.Submitter
     Cardano.MPFS.Mock.TxBuilder
+    Cardano.MPFS.NodeClient.Codecs
+    Cardano.MPFS.NodeClient.Connection
+    Cardano.MPFS.NodeClient.LocalStateQuery
+    Cardano.MPFS.NodeClient.LocalTxSubmission
+    Cardano.MPFS.NodeClient.Types
     Cardano.MPFS.OnChain
     Cardano.MPFS.Proof
     Cardano.MPFS.Provider
