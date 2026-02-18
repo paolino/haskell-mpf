@@ -98,6 +98,10 @@ data Request = Request
     -- ^ The key to operate on
     , requestValue :: !Operation
     -- ^ The operation to perform
+    , requestFee :: !Coin
+    -- ^ Fee the requester agrees to pay
+    , requestSubmittedAt :: !Integer
+    -- ^ POSIXTime (ms) when the request was created
     }
     deriving (Eq, Show)
 
@@ -107,6 +111,8 @@ data TokenState = TokenState
     -- ^ Owner's payment key hash
     , root :: !Root
     -- ^ Current root hash of the token's trie
+    , maxFee :: !Coin
+    -- ^ Maximum fee charged per request
     }
     deriving (Eq, Show)
 

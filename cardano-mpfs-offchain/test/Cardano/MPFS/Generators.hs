@@ -45,6 +45,7 @@ import Cardano.Ledger.TxIn (TxId (..), TxIn (..))
 import Cardano.MPFS.Types
     ( AssetName (..)
     , BlockId (..)
+    , Coin (..)
     , Operation (..)
     , Request (..)
     , Root (..)
@@ -97,11 +98,18 @@ genTxIn = do
     ix <- TxIx <$> choose (0 :: Word16, 10)
     pure $ TxIn txId ix
 
--- | Generate a 'TokenState' with random owner and
--- root.
+-- | Generate a 'Coin' value.
+genCoin :: Gen Coin
+genCoin = Coin <$> choose (0, 10_000_000)
+
+-- | Generate a 'TokenState' with random owner,
+-- root, and maxFee.
 genTokenState :: Gen TokenState
 genTokenState =
-    TokenState <$> genKeyHash <*> genRoot
+    TokenState
+        <$> genKeyHash
+        <*> genRoot
+        <*> genCoin
 
 -- | Generate a random 'Operation'.
 genOperation :: Gen Operation
@@ -120,12 +128,18 @@ genRequest tid = do
     owner <- genKeyHash
     k <- BS.pack <$> vectorOf 8 arbitrary
     op <- genOperation
+    fee <- genCoin
+    submittedAt <-
+        fromIntegral
+            <$> choose (0 :: Int, 2_000_000_000)
     pure
         Request
             { requestToken = tid
             , requestOwner = owner
             , requestKey = k
             , requestValue = op
+            , requestFee = fee
+            , requestSubmittedAt = submittedAt
             }
 
 -- | Generate a 'SlotNo'.

@@ -33,6 +33,7 @@ library
     , base                                   >=4.18 && <5
     , bytestring                             >=0.11 && <0.13
     , cardano-crypto-class
+    , cardano-ledger-alonzo
     , cardano-ledger-api
     , cardano-ledger-binary
     , cardano-ledger-byron
@@ -91,6 +92,8 @@ library
     Cardano.MPFS.Trie.Pure
     Cardano.MPFS.Trie.PureManager
     Cardano.MPFS.TxBuilder
+    Cardano.MPFS.TxBuilder.Config
+    Cardano.MPFS.TxBuilder.Real
     Cardano.MPFS.Types
 
 test-suite unit-tests
@@ -105,6 +108,7 @@ test-suite unit-tests
     , cardano-crypto-class
     , cardano-ledger-api
     , cardano-ledger-core
+    , cardano-ledger-mary
     , cardano-mpfs-offchain
     , containers
     , hspec                                  >=2.11 && <2.12
@@ -124,6 +128,7 @@ test-suite unit-tests
     Cardano.MPFS.StateSpec
     Cardano.MPFS.TrieManagerSpec
     Cardano.MPFS.TrieSpec
+    Cardano.MPFS.TxBuilderSpec
 
 test-suite e2e-tests
   import:           warnings

@@ -11,6 +11,7 @@ import Cardano.MPFS.Blueprint
     )
 import Cardano.MPFS.OnChain
     ( CageDatum (..)
+    , Migration (..)
     , Mint (..)
     , MintRedeemer (..)
     , Neighbor (..)
@@ -131,12 +132,21 @@ instance Arbitrary OnChainRequest where
             <*> genBBS 28
             <*> genBS 32
             <*> arbitrary
+            <*> ( fromIntegral
+                    <$> (arbitrary :: Gen Int)
+                )
+            <*> ( fromIntegral
+                    <$> (arbitrary :: Gen Int)
+                )
 
 instance Arbitrary OnChainTokenState where
     arbitrary =
         OnChainTokenState
             <$> genBBS 28
             <*> arbitrary
+            <*> ( fromIntegral
+                    <$> (arbitrary :: Gen Int)
+                )
 
 instance Arbitrary CageDatum where
     arbitrary =
@@ -148,10 +158,17 @@ instance Arbitrary CageDatum where
 instance Arbitrary Mint where
     arbitrary = Mint <$> arbitrary
 
+instance Arbitrary Migration where
+    arbitrary =
+        Migration
+            <$> genBBS 28
+            <*> arbitrary
+
 instance Arbitrary MintRedeemer where
     arbitrary =
         oneof
             [ Minting <$> arbitrary
+            , Migrating <$> arbitrary
             , pure Burning
             ]
 
@@ -186,6 +203,7 @@ instance Arbitrary UpdateRedeemer where
                 <$> listOf
                     (listOf arbitrary)
             , pure Retract
+            , pure Reject
             ]
 
 -- ---------------------------------------------------------
@@ -211,6 +229,8 @@ spec = do
             roundtrip (x :: CageDatum)
         it "Mint" $ property $ \x ->
             roundtrip (x :: Mint)
+        it "Migration" $ property $ \x ->
+            roundtrip (x :: Migration)
         it "MintRedeemer" $ property $ \x ->
             roundtrip (x :: MintRedeemer)
         it "Neighbor" $ property $ \x ->
@@ -221,15 +241,18 @@ spec = do
             roundtrip (x :: UpdateRedeemer)
 
     describe "Known value encoding" $ do
-        it "Burning encodes to Constr 1 []"
+        it "Burning encodes to Constr 2 []"
             $ toData' Burning
-            `shouldBe` Constr 1 []
+            `shouldBe` Constr 2 []
         it "End encodes to Constr 0 []"
             $ toData' End
             `shouldBe` Constr 0 []
         it "Retract encodes to Constr 3 []"
             $ toData' Retract
             `shouldBe` Constr 3 []
+        it "Reject encodes to Constr 4 []"
+            $ toData' Reject
+            `shouldBe` Constr 4 []
         it "OpInsert encodes to Constr 0 [B v]"
             $ toData' (OpInsert "hello")
             `shouldBe` Constr 0 [B "hello"]
@@ -240,11 +263,15 @@ spec = do
                             BuiltinByteString "own"
                         , stateRoot =
                             OnChainRoot "rt"
+                        , stateMaxFee = 1000
                         }
             toData' (StateDatum st)
                 `shouldBe` Constr
                     1
-                    [Constr 0 [B "own", B "rt"]]
+                    [ Constr
+                        0
+                        [B "own", B "rt", I 1000]
+                    ]
 
     describe "Asset-name derivation" $ do
         it "produces 32 bytes"

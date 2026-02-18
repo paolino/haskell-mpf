@@ -23,7 +23,6 @@ import Cardano.MPFS.Indexer.Skeleton
     ( mkSkeletonIndexer
     )
 import Cardano.MPFS.Mock.State (mkMockState)
-import Cardano.MPFS.Mock.TxBuilder (mkMockTxBuilder)
 import Cardano.MPFS.NodeClient.Connection
     ( newLSQChannel
     , newLTxSChannel
@@ -36,6 +35,12 @@ import Cardano.MPFS.Submitter.N2C (mkN2CSubmitter)
 import Cardano.MPFS.Trie.PureManager
     ( mkPureTrieManager
     )
+import Cardano.MPFS.TxBuilder.Config
+    ( CageConfig
+    )
+import Cardano.MPFS.TxBuilder.Real
+    ( mkRealTxBuilder
+    )
 
 -- | Application configuration.
 data AppConfig = AppConfig
@@ -45,6 +50,8 @@ data AppConfig = AppConfig
     -- ^ Path to the cardano-node Unix socket
     , channelCapacity :: !Int
     -- ^ TBQueue capacity for N2C channels
+    , cageConfig :: !CageConfig
+    -- ^ Cage script and protocol parameters
     }
 
 -- | Run an action with a fully wired 'Context IO'.
@@ -67,15 +74,20 @@ withApplication cfg action = do
     st <- mkMockState
     tm <- mkPureTrieManager
     idx <- mkSkeletonIndexer
-    let ctx =
+    let prov = mkNodeClientProvider lsqCh
+        ctx =
             Context
-                { provider =
-                    mkNodeClientProvider lsqCh
+                { provider = prov
                 , submitter =
                     mkN2CSubmitter ltxsCh
                 , state = st
                 , trieManager = tm
-                , txBuilder = mkMockTxBuilder
+                , txBuilder =
+                    mkRealTxBuilder
+                        (cageConfig cfg)
+                        prov
+                        st
+                        tm
                 , indexer = idx
                 }
     result <- action ctx

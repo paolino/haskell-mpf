@@ -17,6 +17,7 @@ module Cardano.MPFS.OnChain
       CageDatum (..)
     , MintRedeemer (..)
     , Mint (..)
+    , Migration (..)
     , UpdateRedeemer (..)
 
       -- * On-chain domain types
@@ -33,6 +34,8 @@ module Cardano.MPFS.OnChain
 
       -- * Script identity
     , cageScriptHash
+    , cagePolicyId
+    , cageAddr
 
       -- * Asset-name derivation
     , deriveAssetName
@@ -42,6 +45,15 @@ module Cardano.MPFS.OnChain
     , loadCageScript
     ) where
 
+import Cardano.Crypto.Hash (hashFromBytes)
+import Cardano.Ledger.Address (Addr (..))
+import Cardano.Ledger.BaseTypes (Network)
+import Cardano.Ledger.Credential
+    ( Credential (..)
+    , StakeReference (..)
+    )
+import Cardano.Ledger.Hashes (ScriptHash (..))
+import Cardano.Ledger.Mary.Value (PolicyID (..))
 import Cardano.MPFS.Blueprint
     ( Blueprint (..)
     , loadBlueprint
@@ -51,6 +63,7 @@ import Data.Bits (shiftR)
 import Data.ByteArray (convert)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
+import Data.Maybe (fromJust)
 import Data.Word (Word16)
 import PlutusCore.Data (Data (..))
 import PlutusTx.Builtins.Internal
@@ -106,6 +119,8 @@ data OnChainRequest = OnChainRequest
     , requestOwner :: !BuiltinByteString
     , requestKey :: !ByteString
     , requestValue :: !OnChainOperation
+    , requestFee :: !Integer
+    , requestSubmittedAt :: !Integer
     }
     deriving stock (Show, Eq)
 
@@ -114,6 +129,7 @@ data OnChainRequest = OnChainRequest
 data OnChainTokenState = OnChainTokenState
     { stateOwner :: !BuiltinByteString
     , stateRoot :: !OnChainRoot
+    , stateMaxFee :: !Integer
     }
     deriving stock (Show, Eq)
 
@@ -135,7 +151,9 @@ data CageDatum
 data MintRedeemer
     = -- | Mint a new cage token (Constr 0)
       Minting !Mint
-    | -- | Burn a cage token (Constr 1)
+    | -- | Migrate from old validator (Constr 1)
+      Migrating !Migration
+    | -- | Burn a cage token (Constr 2)
       Burning
     deriving stock (Show, Eq)
 
@@ -143,6 +161,14 @@ data MintRedeemer
 -- @types/Mint@.
 newtype Mint = Mint
     { mintAsset :: OnChainTxOutRef
+    }
+    deriving stock (Show, Eq)
+
+-- | Migration parameters. Matches Aiken
+-- @types/Migration@.
+data Migration = Migration
+    { migrationOldPolicy :: !BuiltinByteString
+    , migrationTokenId :: !OnChainTokenId
     }
     deriving stock (Show, Eq)
 
@@ -157,6 +183,8 @@ data UpdateRedeemer
       Modify ![[ProofStep]]
     | -- | Reclaim a pending request (Constr 3)
       Retract
+    | -- | Reject expired requests (Constr 4)
+      Reject
     deriving stock (Show, Eq)
 
 -- | A single step in an MPF Merkle proof, matching
@@ -311,35 +339,46 @@ instance ToData OnChainRequest where
                 , bbsToD requestOwner
                 , bsToD requestKey
                 , unD (toBuiltinData requestValue)
+                , I requestFee
+                , I requestSubmittedAt
                 ]
 
 instance FromData OnChainRequest where
     fromBuiltinData bd = case unD bd of
-        Constr 0 [tok, own, k, val] -> do
-            requestToken <-
-                fromBuiltinData (mkD tok)
-            requestOwner <- bbsFromD own
-            requestKey <- bsFromD k
-            requestValue <-
-                fromBuiltinData (mkD val)
-            Just OnChainRequest{..}
+        Constr
+            0
+            [tok, own, k, val, I fee, I sub] -> do
+                requestToken <-
+                    fromBuiltinData (mkD tok)
+                requestOwner <- bbsFromD own
+                requestKey <- bsFromD k
+                requestValue <-
+                    fromBuiltinData (mkD val)
+                let requestFee = fee
+                    requestSubmittedAt = sub
+                Just OnChainRequest{..}
         _ -> Nothing
 
 instance UnsafeFromData OnChainRequest where
     unsafeFromBuiltinData bd = case unD bd of
-        Constr 0 [tok, B own, B k, val] ->
-            OnChainRequest
-                { requestToken =
-                    unsafeFromBuiltinData (mkD tok)
-                , requestOwner =
-                    BuiltinByteString own
-                , requestKey = k
-                , requestValue =
-                    unsafeFromBuiltinData (mkD val)
-                }
+        Constr
+            0
+            [tok, B own, B k, val, I fee, I sub] ->
+                OnChainRequest
+                    { requestToken =
+                        unsafeFromBuiltinData (mkD tok)
+                    , requestOwner =
+                        BuiltinByteString own
+                    , requestKey = k
+                    , requestValue =
+                        unsafeFromBuiltinData (mkD val)
+                    , requestFee = fee
+                    , requestSubmittedAt = sub
+                    }
         _ ->
             error
-                "unsafeFromBuiltinData: OnChainRequest"
+                "unsafeFromBuiltinData:\
+                \ OnChainRequest"
 
 instance ToData OnChainTokenState where
     toBuiltinData OnChainTokenState{..} =
@@ -348,24 +387,27 @@ instance ToData OnChainTokenState where
                 0
                 [ bbsToD stateOwner
                 , unD (toBuiltinData stateRoot)
+                , I stateMaxFee
                 ]
 
 instance FromData OnChainTokenState where
     fromBuiltinData bd = case unD bd of
-        Constr 0 [own, r] -> do
+        Constr 0 [own, r, I mf] -> do
             stateOwner <- bbsFromD own
             stateRoot <- fromBuiltinData (mkD r)
+            let stateMaxFee = mf
             Just OnChainTokenState{..}
         _ -> Nothing
 
 instance UnsafeFromData OnChainTokenState where
     unsafeFromBuiltinData bd = case unD bd of
-        Constr 0 [B own, r] ->
+        Constr 0 [B own, r, I mf] ->
             OnChainTokenState
                 { stateOwner =
                     BuiltinByteString own
                 , stateRoot =
                     unsafeFromBuiltinData (mkD r)
+                , stateMaxFee = mf
                 }
         _ ->
             error
@@ -416,26 +458,66 @@ instance UnsafeFromData Mint where
             Mint $ unsafeFromBuiltinData (mkD d)
         _ -> error "unsafeFromBuiltinData: Mint"
 
+instance ToData Migration where
+    toBuiltinData Migration{..} =
+        mkD
+            $ Constr
+                0
+                [ bbsToD migrationOldPolicy
+                , unD
+                    (toBuiltinData migrationTokenId)
+                ]
+
+instance FromData Migration where
+    fromBuiltinData bd = case unD bd of
+        Constr 0 [pol, tid] -> do
+            migrationOldPolicy <- bbsFromD pol
+            migrationTokenId <-
+                fromBuiltinData (mkD tid)
+            Just Migration{..}
+        _ -> Nothing
+
+instance UnsafeFromData Migration where
+    unsafeFromBuiltinData bd = case unD bd of
+        Constr 0 [B pol, tid] ->
+            Migration
+                { migrationOldPolicy =
+                    BuiltinByteString pol
+                , migrationTokenId =
+                    unsafeFromBuiltinData (mkD tid)
+                }
+        _ ->
+            error
+                "unsafeFromBuiltinData: Migration"
+
 instance ToData MintRedeemer where
     toBuiltinData (Minting m) =
         mkD $ Constr 0 [unD (toBuiltinData m)]
+    toBuiltinData (Migrating m) =
+        mkD $ Constr 1 [unD (toBuiltinData m)]
     toBuiltinData Burning =
-        mkD $ Constr 1 []
+        mkD $ Constr 2 []
 
 instance FromData MintRedeemer where
     fromBuiltinData bd = case unD bd of
         Constr 0 [d] ->
             Minting <$> fromBuiltinData (mkD d)
-        Constr 1 [] -> Just Burning
+        Constr 1 [d] ->
+            Migrating <$> fromBuiltinData (mkD d)
+        Constr 2 [] -> Just Burning
         _ -> Nothing
 
 instance UnsafeFromData MintRedeemer where
     unsafeFromBuiltinData bd = case unD bd of
         Constr 0 [d] ->
             Minting $ unsafeFromBuiltinData (mkD d)
-        Constr 1 [] -> Burning
+        Constr 1 [d] ->
+            Migrating
+                $ unsafeFromBuiltinData (mkD d)
+        Constr 2 [] -> Burning
         _ ->
-            error "unsafeFromBuiltinData: MintRedeemer"
+            error
+                "unsafeFromBuiltinData: MintRedeemer"
 
 instance ToData Neighbor where
     toBuiltinData Neighbor{..} =
@@ -524,6 +606,7 @@ instance ToData UpdateRedeemer where
                     )
                 ]
     toBuiltinData Retract = mkD $ Constr 3 []
+    toBuiltinData Reject = mkD $ Constr 4 []
 
 instance FromData UpdateRedeemer where
     fromBuiltinData bd = case unD bd of
@@ -539,6 +622,7 @@ instance FromData UpdateRedeemer where
                     steps
             parseProof _ = Nothing
         Constr 3 [] -> Just Retract
+        Constr 4 [] -> Just Reject
         _ -> Nothing
 
 instance UnsafeFromData UpdateRedeemer where
@@ -557,9 +641,11 @@ instance UnsafeFromData UpdateRedeemer where
                     "unsafeFromBuiltinData:\
                     \ UpdateRedeemer"
         Constr 3 [] -> Retract
+        Constr 4 [] -> Reject
         _ ->
             error
-                "unsafeFromBuiltinData: UpdateRedeemer"
+                "unsafeFromBuiltinData:\
+                \ UpdateRedeemer"
 
 -- ---------------------------------------------------------
 -- Script identity
@@ -599,6 +685,25 @@ cageScriptHash =
         , 0x40
         , 0xbf
         ]
+
+-- | The cage validator 'ScriptHash' (ledger type).
+cageScriptHashLedger :: ScriptHash
+cageScriptHashLedger =
+    ScriptHash
+        $ fromJust
+        $ hashFromBytes cageScriptHash
+
+-- | Cage minting policy ID.
+cagePolicyId :: PolicyID
+cagePolicyId = PolicyID cageScriptHashLedger
+
+-- | Cage script address for a given network.
+cageAddr :: Network -> Addr
+cageAddr net =
+    Addr
+        net
+        (ScriptHashObj cageScriptHashLedger)
+        StakeRefNull
 
 -- ---------------------------------------------------------
 -- Asset-name derivation
