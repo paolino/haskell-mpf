@@ -7,31 +7,34 @@ a mock.
 
 ## Provider
 
-Blockchain queries (read-only). Wraps UTxO lookups from the CSMT
-index and node state queries.
+Blockchain queries (read-only). Queries a Cardano node via N2C
+LocalStateQuery.
 
-**Reads from:** UTxO index (RocksDB), Cardano Node (LocalStateQuery)
+**Implementation:** `mkNodeClientProvider` (real N2C)
 
 ```haskell
 data Provider m = Provider
-    { fetchUtxos :: Address -> m [UTxO]
-    -- ^ CSMT prefix scan over address-keyed UTxOs
-    , fetchProtocolParams :: m ProtocolParams
-    -- ^ Node local-state-query, cached per epoch
-    , evaluateTx :: TxCBOR -> m ExUnits
-    -- ^ Node local-state-query for Plutus execution units
+    { queryUTxOs
+        :: Addr
+        -> m [(TxIn, TxOut ConwayEra)]
+    -- ^ Look up UTxOs at an address
+    , queryProtocolParams
+        :: m (PParams ConwayEra)
+    -- ^ Fetch current protocol parameters
+    , evaluateTx
+        :: ByteString -> m ExUnits
+    -- ^ Evaluate execution units for a serialised
+    -- CBOR transaction (not yet implemented)
     }
 ```
 
 ```mermaid
 graph LR
     PRV["Provider"]
-    DB["UTxO Index<br/>(RocksDB)"]
     NODE["Cardano Node<br/>(LocalStateQuery)"]
 
-    PRV -->|fetchUtxos| DB
-    PRV -->|fetchProtocolParams| NODE
-    PRV -->|evaluateTx| NODE
+    PRV -->|queryUTxOs| NODE
+    PRV -->|queryProtocolParams| NODE
 ```
 
 ---
@@ -39,123 +42,110 @@ graph LR
 ## TrieManager
 
 Manages a map of token identifiers to MPF tries. Each token has
-its own trie stored in a RocksDB sublevel. Access is mutex-locked.
+its own isolated trie.
 
-**Reads from / writes to:** Trie storage (RocksDB sublevels)
+**Implementation:** `mkPureTrieManager` (in-memory `IORef` maps)
 
 ```haskell
 data TrieManager m = TrieManager
-    { withTrie :: TokenId -> (SafeTrie m -> m a) -> m a
-    -- ^ Mutex-locked access to a token's trie
-    , trieIds :: m [TokenId]
-    -- ^ List all known token tries
-    , hide :: TokenId -> m ()
-    -- ^ Mark a trie as hidden (for rollback)
-    , unhide :: TokenId -> m ()
-    -- ^ Restore a hidden trie
-    , delete :: TokenId -> m ()
-    -- ^ Permanently remove a trie
+    { withTrie
+        :: forall a
+         . TokenId
+        -> (Trie m -> m a)
+        -> m a
+    -- ^ Run an action with access to a token's trie
+    , createTrie :: TokenId -> m ()
+    -- ^ Create a new empty trie for a token
+    , deleteTrie :: TokenId -> m ()
+    -- ^ Delete a token's trie
     }
-```
 
-```mermaid
-graph LR
-    TM["TrieManager"]
-    DB["RocksDB<br/>(per-token sublevels)"]
-
-    TM -->|"withTrie<br/>trieIds<br/>hide/unhide/delete"| DB
+data Trie m = Trie
+    { insert
+        :: ByteString -> ByteString -> m Root
+    , delete :: ByteString -> m Root
+    , lookup :: ByteString -> m (Maybe ByteString)
+    , getRoot :: m Root
+    , getProof :: ByteString -> m (Maybe Proof)
+    }
 ```
 
 ---
 
 ## State
 
-Chain-derived state tracking: known tokens, pending requests,
-and checkpoints for rollback support. All stored in RocksDB
-sublevels, mutex-locked.
+Token and request state tracking. Three sub-records for tokens,
+requests, and chain sync checkpoints.
 
-**Reads from / writes to:** State tables (RocksDB sublevels)
+**Implementation:** `mkMockState` (in-memory `IORef` maps)
 
 ```haskell
 data State m = State
-    { addToken :: Slotted Token -> m ()
-    , removeToken :: Slotted TokenId -> m ()
-    , updateToken :: Slotted TokenChange -> m ()
-    , addRequest :: Slotted Request -> m ()
-    , removeRequest :: Slotted OutputRef -> m ()
-    , rollback :: WithOrigin Slot -> m ()
-    -- ^ Rewind to a previous slot
-    , tokens :: Tokens m
-    -- ^ Sub-record for token queries
+    { tokens :: Tokens m
     , requests :: Requests m
-    -- ^ Sub-record for request queries
     , checkpoints :: Checkpoints m
-    -- ^ Sub-record for checkpoint queries
     }
-```
 
-```mermaid
-graph LR
-    ST["State"]
-    DB_T["tokens<br/>(sublevel)"]
-    DB_R["requests<br/>(sublevel)"]
-    DB_C["checkpoints<br/>(sublevel)"]
+data Tokens m = Tokens
+    { getToken :: TokenId -> m (Maybe TokenState)
+    , putToken :: TokenId -> TokenState -> m ()
+    , removeToken :: TokenId -> m ()
+    , listTokens :: m [TokenId]
+    }
 
-    ST -->|"addToken<br/>removeToken<br/>updateToken"| DB_T
-    ST -->|"addRequest<br/>removeRequest"| DB_R
-    ST -->|"rollback"| DB_C
+data Requests m = Requests
+    { getRequest :: TxIn -> m (Maybe Request)
+    , putRequest :: TxIn -> Request -> m ()
+    , removeRequest :: TxIn -> m ()
+    , requestsByToken :: TokenId -> m [Request]
+    }
+
+data Checkpoints m = Checkpoints
+    { getCheckpoint :: m (Maybe (SlotNo, BlockId))
+    , putCheckpoint :: SlotNo -> BlockId -> m ()
+    }
 ```
 
 ---
 
 ## Indexer
 
-ChainSync follower. Processes each block's transactions through
-a pure `Process` function, updating State and TrieManager
-accordingly. Pausable via mutex — paused during transaction
-building to prevent state races.
+Chain sync follower with lifecycle control. Currently a skeleton
+that returns a genesis tip.
 
-**Reads from:** Cardano Node (ChainSync)
-**Writes to:** State, TrieManager
+**Implementation:** `mkSkeletonIndexer` (no-op, returns `SlotNo 0`)
 
 ```haskell
-data Indexer m = Indexer
-    { tips :: m (NetworkTip, IndexerTip)
-    -- ^ Current network tip and indexer position
-    , waitBlocks :: Int -> m BlockHeight
-    -- ^ Wait for N new blocks (settlement)
-    , pause :: m (m ())
-    -- ^ Pause indexing, returns a release action
+data ChainTip = ChainTip
+    { tipSlot :: SlotNo
+    , tipBlockId :: BlockId
     }
-```
 
-```mermaid
-graph TD
-    NODE["Cardano Node<br/>(ChainSync)"]
-    IDX["Indexer"]
-    PROC["Process<br/>(pure function)"]
-    ST["State"]
-    TM["TrieManager"]
-
-    NODE -->|blocks| IDX
-    IDX -->|each tx| PROC
-    PROC -->|token events| ST
-    PROC -->|trie updates| TM
+data Indexer m = Indexer
+    { start :: m ()
+    , stop :: m ()
+    , pause :: m ()
+    , resume :: m ()
+    , getTip :: m ChainTip
+    }
 ```
 
 ---
 
 ## Submitter
 
-Transaction submission via the node's LocalTxSubmission
-mini-protocol. Shares the same socket as ChainSync.
+Transaction submission via N2C LocalTxSubmission. Takes a full
+ledger `Tx ConwayEra` and returns a `SubmitResult`.
 
-**Writes to:** Cardano Node (mempool)
+**Implementation:** `mkN2CSubmitter` (real N2C)
 
 ```haskell
-data Submitter m = Submitter
-    { submitTx :: TxCBOR -> m TxHash
-    -- ^ Submit signed CBOR, returns transaction hash
+data SubmitResult
+    = Submitted TxId
+    | Rejected ByteString
+
+newtype Submitter m = Submitter
+    { submitTx :: Tx ConwayEra -> m SubmitResult
     }
 ```
 
@@ -163,48 +153,70 @@ data Submitter m = Submitter
 
 ## TxBuilder
 
-Pluggable transaction building interface. The backend
-implementation is deferred — it could be extracted from
-`cardano-wallet` or written as a lightweight custom solution.
+Constructs transactions for all MPFS protocol operations. Returns
+full ledger `Tx` values ready for signing.
 
-**Reads from:** Provider (UTxOs, protocol params, evaluation)
+**Implementation:** `mkMockTxBuilder` (placeholder)
 
 ```haskell
 data TxBuilder m = TxBuilder
-    { balanceTx :: PartialTx -> UTxOSet -> ProtocolParams -> m BalancedTx
-    -- ^ Balance a partial transaction (coin selection + fee estimation)
-    , estimateFee :: TxBody -> ProtocolParams -> m Coin
-    -- ^ Estimate fees for a transaction body
-    , selectCoins :: CoinSelectionGoal -> UTxOSet -> m CoinSelection
-    -- ^ Select inputs to cover a given goal
+    { bootToken
+        :: Addr -> m (Tx ConwayEra)
+    -- ^ Create a new MPFS token
+    , requestInsert
+        :: TokenId -> ByteString -> ByteString
+        -> Addr -> m (Tx ConwayEra)
+    -- ^ Request inserting a key-value pair
+    , requestDelete
+        :: TokenId -> ByteString
+        -> Addr -> m (Tx ConwayEra)
+    -- ^ Request deleting a key
+    , updateToken
+        :: TokenId -> Addr -> m (Tx ConwayEra)
+    -- ^ Process pending requests for a token
+    , retractRequest
+        :: TxIn -> Addr -> m (Tx ConwayEra)
+    -- ^ Cancel a pending request
+    , endToken
+        :: TokenId -> Addr -> m (Tx ConwayEra)
+    -- ^ Retire an MPFS token
     }
 ```
 
 ---
 
+## Balance
+
+Pure transaction balancing function (not a singleton record).
+Adds a fee-paying UTxO and change output, finding the fee via
+a fixpoint loop over `estimateMinFeeTx`.
+
+```haskell
+balanceTx
+    :: PParams ConwayEra
+    -> (TxIn, TxOut ConwayEra)   -- fee-paying UTxO
+    -> Addr                       -- change address
+    -> Tx ConwayEra               -- unbalanced tx
+    -> Either BalanceError (Tx ConwayEra)
+```
+
+The fee estimation iterates until stable (max 10 rounds, crashes
+if not converged). One key witness is assumed for the fee input.
+
+---
+
 ## Context
 
-Facade record that bundles all singletons into a single
-environment, threaded through transaction builders and HTTP
-handlers.
+Facade record that bundles all singletons into a single environment.
 
 ```haskell
 data Context m = Context
-    { cagingScript :: CagingScript
-    , signingWallet :: Maybe (SigningWallet m)
-    , addressWallet :: Address -> m WalletInfo
-    , newTxBuilder :: m (TxBuilder m)
-    , fetchTokens :: m [Token]
-    , fetchToken :: TokenId -> m (Maybe Token)
-    , fetchRequests :: Maybe TokenId -> m [Request]
-    , evaluateTx :: TxCBOR -> m ExUnits
-    , withTrie :: TokenId -> (SafeTrie m -> m a) -> m a
-    , waitBlocks :: Int -> m BlockHeight
-    , tips :: m (NetworkTip, IndexerTip)
-    , waitSettlement :: TxHash -> m BlockHash
-    , facts :: TokenId -> m (Map Key Value)
-    , pauseIndexer :: m (m ())
-    , submitTx :: TxCBOR -> m TxHash
+    { provider :: Provider m
+    , trieManager :: TrieManager m
+    , state :: State m
+    , indexer :: Indexer m
+    , submitter :: Submitter m
+    , txBuilder :: TxBuilder m
     }
 ```
 

@@ -45,4 +45,4 @@ nav:
       - Overview: architecture/overview.md
       - Data Sources: architecture/data-sources.md
       - Singletons: architecture/singletons.md
-      - Database Layer: architecture/database.md
+      - Testing: architecture/testing.md
