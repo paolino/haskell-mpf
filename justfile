@@ -83,6 +83,19 @@ ci:
     just format-check
     just hlint
 
+# Run E2E tests (starts cardano-node as subprocess)
+e2e match="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ '{{ match }}' == "" ]]; then
+        cabal test cardano-mpfs-offchain:e2e-tests -O0 --test-show-details=direct
+    else
+        cabal test cardano-mpfs-offchain:e2e-tests -O0 \
+            --test-show-details=direct \
+            --test-option=--match \
+            --test-option="{{ match }}"
+    fi
+
 # Clean build artifacts
 clean:
     #!/usr/bin/env bash
