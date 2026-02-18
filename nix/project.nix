@@ -1,4 +1,4 @@
-{ CHaP, indexState, pkgs, mkdocs, asciinema, cardano-node-pkgs, ... }:
+{ CHaP, indexState, pkgs, mkdocs, asciinema, cardano-node-pkgs, mpfs-blueprint, ... }:
 
 let
   indexTool = { index-state = indexState; };
@@ -34,6 +34,7 @@ let
     ];
     shellHook = ''
       echo "Entering merkle-patricia-forestry dev shell"
+      export MPFS_BLUEPRINT="${mpfs-blueprint}"
     '';
   };
 

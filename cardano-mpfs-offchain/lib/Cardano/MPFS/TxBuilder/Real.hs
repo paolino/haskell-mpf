@@ -66,7 +66,6 @@ import Cardano.Ledger.Core
     , hashScript
     )
 import Cardano.Ledger.Credential (Credential (..))
-import Cardano.Ledger.Hashes (ScriptHash)
 import Cardano.Ledger.Keys (KeyHash (..))
 import Cardano.Ledger.Mary.Value
     ( MaryValue (..)

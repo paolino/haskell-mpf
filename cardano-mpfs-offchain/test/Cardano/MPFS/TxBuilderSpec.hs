@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -6,15 +7,18 @@ module Cardano.MPFS.TxBuilderSpec (spec) where
 
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as SBS
+import Data.Foldable (for_)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, isJust)
 import Data.Set qualified as Set
 import Lens.Micro ((^.))
+import System.Environment (lookupEnv)
 
 import Test.Hspec
     ( Spec
     , describe
     , it
+    , runIO
     , shouldBe
     , shouldSatisfy
     )
@@ -43,7 +47,9 @@ import Cardano.Ledger.Api.Tx.Out
     , mkBasicTxOut
     )
 import Cardano.Ledger.Api.Tx.Wits
-    ( scriptTxWitsL
+    ( Redeemers (..)
+    , rdmrsTxWitsL
+    , scriptTxWitsL
     )
 import Cardano.Ledger.BaseTypes
     ( Inject (..)
@@ -58,9 +64,19 @@ import Cardano.Ledger.Keys
     ( KeyHash (..)
     , KeyRole (..)
     )
-import Cardano.Ledger.Mary.Value (PolicyID (..))
+import Cardano.Ledger.Mary.Value
+    ( MultiAsset (..)
+    , PolicyID (..)
+    )
+import Cardano.Ledger.Plutus.ExUnits
+    ( ExUnits (..)
+    )
 import Cardano.Ledger.TxIn (TxIn)
 
+import Cardano.MPFS.Blueprint
+    ( extractCompiledCode
+    , loadBlueprint
+    )
 import Cardano.MPFS.Generators (genTxIn)
 import Cardano.MPFS.Mock.State (mkMockState)
 import Cardano.MPFS.OnChain
@@ -78,7 +94,6 @@ import Cardano.MPFS.Types
     ( AssetName (..)
     , Coin (..)
     , ConwayEra
-    , ExUnits (..)
     , PParams
     , Root (..)
     , TokenId (..)
@@ -128,7 +143,8 @@ mkTestProvider utxos =
     Provider
         { queryUTxOs = \_ -> pure utxos
         , queryProtocolParams = pure zeroPP
-        , evaluateTx = \_ -> pure (ExUnits 0 0)
+        , evaluateTx = \_ ->
+            pure (ExUnits 0 0)
         }
 
 -- | Dummy TrieManager that errors on use.
@@ -152,6 +168,7 @@ spec = describe "Cardano.MPFS.TxBuilder.Real" $ do
     cageIdentitySpec
     requestInsertSpec
     requestDeleteSpec
+    bootTokenSpec
 
 -- ---------------------------------------------------------
 -- Cage identity
@@ -173,10 +190,9 @@ cageIdentitySpec =
                 Addr net cred _stake -> do
                     net `shouldBe` Testnet
                     cred
-                        `shouldSatisfy` ( \c -> case c of
-                                            ScriptHashObj _ -> True
-                                            _ -> False
-                                        )
+                        `shouldSatisfy` \case
+                            ScriptHashObj _ -> True
+                            _ -> False
                 _ ->
                     error
                         "expected Addr, got Bootstrap"
@@ -257,6 +273,93 @@ requestDeleteSpec =
             Map.size scripts `shouldBe` 0
 
 -- ---------------------------------------------------------
+-- bootToken (blueprint-dependent)
+-- ---------------------------------------------------------
+
+bootTokenSpec :: Spec
+bootTokenSpec =
+    describe "bootToken" $ do
+        mPath <-
+            runIO $ lookupEnv "MPFS_BLUEPRINT"
+        case mPath of
+            Nothing ->
+                it
+                    "skipped (MPFS_BLUEPRINT not set)"
+                    (pure () :: IO ())
+            Just path -> do
+                ebp <- runIO $ loadBlueprint path
+                case ebp of
+                    Left err ->
+                        it
+                            ( "loads blueprint: "
+                                <> err
+                            )
+                            ( error
+                                "blueprint parse failed"
+                                :: IO ()
+                            )
+                    Right bp -> do
+                        let mCode =
+                                extractCompiledCode
+                                    "cage."
+                                    bp
+                        it "extractCompiledCode succeeds"
+                            $ mCode
+                            `shouldSatisfy` isJust
+                        for_
+                            mCode
+                            bootTokenWithScript
+
+-- | bootToken tests that require real script bytes.
+bootTokenWithScript :: SBS.ShortByteString -> Spec
+bootTokenWithScript scriptBytes = do
+    let cfg =
+            CageConfig
+                { cageScriptBytes = scriptBytes
+                , processTime = 300_000
+                , retractTime = 600_000
+                , defaultMaxFee = Coin 1_000_000
+                , network = Testnet
+                }
+
+    it "builds a balanced tx" $ do
+        tx <- runBootToken cfg
+        let outList = toOutList tx
+        length outList
+            `shouldSatisfy` (>= 1)
+
+    it "mints exactly one token" $ do
+        tx <- runBootToken cfg
+        let MultiAsset ma =
+                tx ^. bodyTxL . mintTxBodyL
+            mPolicy = Map.lookup cagePolicyId ma
+        mPolicy `shouldSatisfy` isJust
+        let assets = fromJust mPolicy
+        -- exactly one asset minted
+        Map.size assets `shouldBe` 1
+        -- quantity is +1
+        let qty = head (Map.elems assets)
+        qty `shouldBe` 1
+
+    it "has a script witness" $ do
+        tx <- runBootToken cfg
+        let scripts =
+                tx ^. witsTxL . scriptTxWitsL
+        Map.size scripts `shouldBe` 1
+
+    it "has a minting redeemer" $ do
+        tx <- runBootToken cfg
+        let (Redeemers rdmrs) =
+                tx ^. witsTxL . rdmrsTxWitsL
+        Map.size rdmrs `shouldBe` 1
+
+    it "cage output has 2 ADA" $ do
+        tx <- runBootToken cfg
+        let cageOut = head (toOutList tx)
+            outCoin = cageOut ^. coinTxOutL
+        outCoin `shouldBe` Coin 2_000_000
+
+-- ---------------------------------------------------------
 -- Runners
 -- ---------------------------------------------------------
 
@@ -291,6 +394,32 @@ runRequestDelete = do
     (_st, _prov, builder, _txIn) <- mkTestFixture
     let feeAddr = testAddr testKh
     requestDelete builder testTid "mykey" feeAddr
+
+-- | Run bootToken with a given CageConfig.
+runBootToken :: CageConfig -> IO (Tx ConwayEra)
+runBootToken cfg = do
+    txIn1 <- generate genTxIn
+    txIn2 <- generate genTxIn
+    let feeAddr = testAddr testKh
+        utxo1 =
+            mkBasicTxOut
+                feeAddr
+                (inject (Coin 50_000_000))
+        utxo2 =
+            mkBasicTxOut
+                feeAddr
+                (inject (Coin 50_000_000))
+        prov =
+            mkTestProvider
+                [(txIn1, utxo1), (txIn2, utxo2)]
+    st <- mkMockState
+    let builder =
+            mkRealTxBuilder
+                cfg
+                prov
+                st
+                dummyTrieManager
+    bootToken builder feeAddr
 
 -- | Token ID used across tests.
 testTid :: TokenId
