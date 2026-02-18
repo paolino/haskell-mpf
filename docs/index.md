@@ -1,15 +1,20 @@
 # Cardano MPFS Offchain
 
-Haskell implementation of the offchain component for
-[Merkle Patricia Forestry](https://github.com/aiken-lang/merkle-patricia-forestry)
-on Cardano.
+Haskell offchain companion to
+[cardano-mpfs-onchain](https://github.com/cardano-foundation/cardano-mpfs-onchain)
+— indexing, transaction building, and submission for Cardano Merkle
+Patricia Forestry.
 
-This service manages MPF tries, builds and submits transactions,
-and exposes an HTTP API for oracle operations.
+## Packages
+
+| Package | Description |
+|---|---|
+| `merkle-patricia-forestry` | 16-ary hex Patricia trie with Blake2b-256, compatible with the [Aiken on-chain implementation](https://github.com/aiken-lang/merkle-patricia-forestry) |
+| `cardano-mpfs-offchain` | Off-chain service layer: N2C node client, UTxO provider, transaction balancing, submission, and skeleton indexer |
 
 ## Documentation
 
 - [Architecture Overview](architecture/overview.md) — system diagram, phases, design principles
-- [Data Sources](architecture/data-sources.md) — connections, protocols, data flow
+- [Data Sources](architecture/data-sources.md) — N2C connection, mini-protocols, data flow
 - [Singletons](architecture/singletons.md) — record-of-functions interfaces
-- [Database Layer](architecture/database.md) — storage design, RocksDB abstraction
+- [Testing](architecture/testing.md) — unit tests, E2E tests with cardano-node subprocess
