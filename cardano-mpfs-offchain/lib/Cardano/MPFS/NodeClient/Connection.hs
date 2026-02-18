@@ -210,12 +210,11 @@ lsqCodec =
         NodeToClientV_20
         (encodePoint (encodeRawHash (Proxy @Block)))
         (decodePoint (decodeRawHash (Proxy @Block)))
-        ( \q ->
-            queryEncodeNodeToClient
-                ccfg
-                qv
-                n2cVersion
-                (SomeSecond q)
+        ( queryEncodeNodeToClient
+            ccfg
+            qv
+            n2cVersion
+            . SomeSecond
         )
         ( (\(SomeSecond q) -> Some q)
             <$> queryDecodeNodeToClient

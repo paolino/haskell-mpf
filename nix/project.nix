@@ -59,4 +59,6 @@ in {
     project.hsPkgs.cardano-mpfs-offchain.components.library;
   packages.offchain-tests =
     project.hsPkgs.cardano-mpfs-offchain.components.tests.unit-tests;
+  packages.e2e-tests =
+    project.hsPkgs.cardano-mpfs-offchain.components.tests.e2e-tests;
 }

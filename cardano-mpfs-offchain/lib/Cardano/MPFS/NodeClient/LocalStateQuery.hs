@@ -22,7 +22,7 @@ import Cardano.MPFS.NodeClient.Types
     )
 import Control.Concurrent.STM
     ( atomically
-    , newEmptyTMVar
+    , newEmptyTMVarIO
     , putTMVar
     , readTBQueue
     , takeTMVar
@@ -126,7 +126,7 @@ queryLSQ
     -> Query Block result
     -> IO result
 queryLSQ ch query = do
-    resultVar <- atomically newEmptyTMVar
+    resultVar <- newEmptyTMVarIO
     atomically
         $ writeTBQueue (lsqRequests ch)
         $ SomeLSQQuery query resultVar

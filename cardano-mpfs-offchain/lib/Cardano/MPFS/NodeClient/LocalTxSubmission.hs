@@ -21,7 +21,7 @@ import Cardano.MPFS.NodeClient.Types
     )
 import Control.Concurrent.STM
     ( atomically
-    , newEmptyTMVar
+    , newEmptyTMVarIO
     , putTMVar
     , readTBQueue
     , takeTMVar
@@ -79,7 +79,7 @@ submitTxN2C
     -> GenTx Block
     -> IO (Either (ApplyTxErr Block) ())
 submitTxN2C ch tx = do
-    resultVar <- atomically newEmptyTMVar
+    resultVar <- newEmptyTMVarIO
     atomically
         $ writeTBQueue (ltxsRequests ch)
         $ TxSubmitRequest

@@ -46,6 +46,7 @@ import System.IO
     , hSetBuffering
     , openFile
     )
+import System.Posix.Files (ownerReadMode, setFileMode)
 import System.Process
     ( CreateProcess (..)
     , ProcessHandle
@@ -106,18 +107,20 @@ prepareTmpDir srcGenesis = do
     let startTime = addUTCTime startOffset now
     patchShelleyGenesis startTime srcGenesis tmpDir
     patchByronGenesis startTime srcGenesis tmpDir
-    -- Copy delegate keys
+    -- Copy delegate keys and restrict permissions
+    -- (cardano-node refuses keys with "other" bits)
     let srcKeys = srcGenesis </> "delegate-keys"
         dstKeys = tmpDir </> "delegate-keys"
-    copyFile
-        (srcKeys </> "delegate1.kes.skey")
-        (dstKeys </> "delegate1.kes.skey")
-    copyFile
-        (srcKeys </> "delegate1.vrf.skey")
-        (dstKeys </> "delegate1.vrf.skey")
-    copyFile
-        (srcKeys </> "delegate1.opcert")
-        (dstKeys </> "delegate1.opcert")
+        copyKey name = do
+            copyFile
+                (srcKeys </> name)
+                (dstKeys </> name)
+            setFileMode
+                (dstKeys </> name)
+                ownerReadMode
+    copyKey "delegate1.kes.skey"
+    copyKey "delegate1.vrf.skey"
+    copyKey "delegate1.opcert"
     pure tmpDir
 
 -- | Copy shelley-genesis.json, replacing

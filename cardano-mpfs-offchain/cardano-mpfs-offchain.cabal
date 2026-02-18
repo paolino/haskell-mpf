@@ -148,6 +148,7 @@ test-suite e2e-tests
     , ouroboros-network-api
     , process
     , time
+    , unix
 
   other-modules:
     Cardano.MPFS.E2E.Devnet

@@ -24,6 +24,7 @@ data SubmitResult
       Rejected
         !ByteString
         -- ^ Rejection reason (UTF-8 encoded)
+    deriving stock (Show)
 
 -- | Interface for submitting transactions to the
 -- blockchain.
