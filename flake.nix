@@ -21,8 +21,8 @@
     };
   };
 
-  outputs = inputs@{ self, nixpkgs, flake-parts, haskellNix
-    , mkdocs, asciinema, iohkNix, CHaP, ... }:
+  outputs = inputs@{ self, nixpkgs, flake-parts, haskellNix, mkdocs, asciinema
+    , iohkNix, CHaP, ... }:
     let
       version = self.dirtyShortRev or self.shortRev;
       parts = flake-parts.lib.mkFlake { inherit inputs; } {
@@ -47,8 +47,7 @@
           in {
             packages = {
               inherit (project.packages)
-                unit-tests offchain-tests
-                cardano-mpfs-offchain;
+                unit-tests offchain-tests cardano-mpfs-offchain;
               default = project.packages.merkle-patricia-forestry;
             };
             inherit (project) devShells;
