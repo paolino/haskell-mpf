@@ -81,8 +81,10 @@ library
     Cardano.MPFS.OnChain
     Cardano.MPFS.Proof
     Cardano.MPFS.Provider
+    Cardano.MPFS.Provider.NodeClient
     Cardano.MPFS.State
     Cardano.MPFS.Submitter
+    Cardano.MPFS.Submitter.N2C
     Cardano.MPFS.Trie
     Cardano.MPFS.Trie.Pure
     Cardano.MPFS.Trie.PureManager
