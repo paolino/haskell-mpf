@@ -1,4 +1,4 @@
-{ CHaP, indexState, pkgs, mkdocs, asciinema, ... }:
+{ CHaP, indexState, pkgs, mkdocs, asciinema, cardano-node-pkgs, ... }:
 
 let
   indexTool = { index-state = indexState; };
@@ -29,6 +29,8 @@ let
       asciinema.compress
       asciinema.resize
       pkgs.asciinema
+      cardano-node-pkgs.cardano-node
+      cardano-node-pkgs.cardano-cli
     ];
     shellHook = ''
       echo "Entering merkle-patricia-forestry dev shell"
