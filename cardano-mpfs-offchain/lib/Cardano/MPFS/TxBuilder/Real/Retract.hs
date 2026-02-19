@@ -42,7 +42,8 @@ import Cardano.Ledger.Api.Tx.Wits
     , scriptTxWitsL
     )
 import Cardano.Ledger.BaseTypes
-    ( StrictMaybe (SJust)
+    ( SlotNo (..)
+    , StrictMaybe (SJust)
     )
 import Cardano.Ledger.Conway.Scripts
     ( ConwayPlutusPurpose (..)
@@ -152,12 +153,21 @@ retractRequestImpl cfg prov st reqTxIn addr = do
     -- 6. Build tx with Retract redeemer
     --    (Retract takes the STATE UTxO reference)
     -- Phase 2: entirely_after(submitted_at +
-    --   process_time - 1) AND entirely_before(
+    --   process_time) AND entirely_before(
     --   submitted_at + process_time + retract_time)
     let phase2Start = submAt + procTime
         phase2End = submAt + procTime + retrTime
-        lowerSlot = posixMsToSlot cfg phase2Start
-        upperSlot = posixMsToSlot cfg phase2End
+        -- Ceil for lower bound: first slot that is
+        -- at-or-after the Phase 2 start.
+        lowerSlot =
+            posixMsCeilSlot cfg phase2Start
+        -- Floor for upper bound: last slot that is
+        -- at-or-before Phase 2 end, minus 1 to
+        -- stay strictly before the deadline.
+        upperSlot =
+            let SlotNo s =
+                    posixMsToSlot cfg phase2End
+            in  SlotNo (max 0 (s - 1))
     let script = mkCageScript cfg
         scriptHash = hashScript script
         allInputs =

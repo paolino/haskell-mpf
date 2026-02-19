@@ -45,6 +45,7 @@ module Cardano.MPFS.TxBuilder.Real.Internal
 
       -- * Slot conversion
     , posixMsToSlot
+    , posixMsCeilSlot
 
       -- * Constants
     , emptyRoot
@@ -151,14 +152,27 @@ import Cardano.MPFS.Types
     , TokenId (..)
     )
 
--- | Convert POSIX time (ms) to an approximate
--- 'SlotNo' using the config's system start and
--- slot length. Clamps to 0 if the time is before
--- system start.
+-- | Convert POSIX time (ms) to a 'SlotNo',
+-- rounding __down__ (floor). Use this for upper
+-- bounds where the validator checks
+-- @entirely_before(deadline)@: the last valid
+-- slot is at or before the deadline.
 posixMsToSlot :: CageConfig -> Integer -> SlotNo
 posixMsToSlot cfg ms =
     let elapsed = max 0 (ms - systemStartPosixMs cfg)
         slot = elapsed `div` slotLengthMs cfg
+    in  SlotNo (fromIntegral slot)
+
+-- | Convert POSIX time (ms) to a 'SlotNo',
+-- rounding __up__ (ceiling). Use this for lower
+-- bounds where the validator checks
+-- @entirely_after(deadline)@: the first valid
+-- slot is at or after the deadline.
+posixMsCeilSlot :: CageConfig -> Integer -> SlotNo
+posixMsCeilSlot cfg ms =
+    let elapsed = max 0 (ms - systemStartPosixMs cfg)
+        sl = slotLengthMs cfg
+        slot = (elapsed + sl - 1) `div` sl
     in  SlotNo (fromIntegral slot)
 
 -- | Empty MPF root (32 zero bytes).

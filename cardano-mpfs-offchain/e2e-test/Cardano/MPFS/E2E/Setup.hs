@@ -162,7 +162,7 @@ withDevnet
     -> IO a
 withDevnet action = do
     gDir <- genesisDir
-    withCardanoNode gDir $ \sock -> do
+    withCardanoNode gDir $ \sock _startMs -> do
         lsqCh <- newLSQChannel 16
         ltxsCh <- newLTxSChannel 16
         nodeThread <-

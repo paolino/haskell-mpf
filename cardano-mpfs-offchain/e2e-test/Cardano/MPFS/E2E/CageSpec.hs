@@ -11,13 +11,13 @@
 module Cardano.MPFS.E2E.CageSpec (spec) where
 
 import Control.Concurrent (threadDelay)
+import Control.Exception (SomeException, try)
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as BS8
 import Data.ByteString.Lazy qualified as BSL
 import Data.ByteString.Short qualified as SBS
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
-import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Word (Word8)
 import Lens.Micro ((^.))
 import System.Environment (lookupEnv)
@@ -473,7 +473,8 @@ cageFlowSpec bpPath scriptBytes =
 
 -- | Start a devnet node, wire a full 'Context IO',
 -- wait for N2C to connect, then run the action.
--- Computes 'CageConfig' with the real system start.
+-- Uses the exact system start time from the
+-- genesis to avoid slot/POSIX conversion drift.
 withE2E
     :: SBS.ShortByteString
     -> ( FilePath
@@ -483,15 +484,10 @@ withE2E
        )
     -> IO a
 withE2E scriptBytes action = do
-    -- Capture system start (devnet genesis =
-    -- now + 5s, see Devnet.startOffset)
-    now <- getPOSIXTime
-    let startMs =
-            floor ((now + 5) * 1000) :: Integer
-        cfg = cageCfg scriptBytes startMs
     gDir <- genesisDir
-    withCardanoNode gDir $ \sock -> do
-        let appCfg =
+    withCardanoNode gDir $ \sock startMs -> do
+        let cfg = cageCfg scriptBytes startMs
+            appCfg =
                 AppConfig
                     { networkMagic =
                         devnetMagic
@@ -610,37 +606,40 @@ dumpTxForAiken prov cfg bpPath label tx = do
         $ toHex
         $ BSL.toStrict
         $ serialize ver txOuts
-    -- 4. Run aiken tx simulate
+    -- 4. Run aiken tx simulate (optional)
     putStrLn
         $ "=== aiken simulate ("
             <> label
             <> ") ==="
-    (exitCode, stdout', stderr') <-
-        readProcessWithExitCode
-            "nix"
-            [ "develop"
-            , "path:/code/cardano-mpfs-onchain"
-            , "-c"
-            , "aiken"
-            , "tx"
-            , "simulate"
-            , prefix <> "-tx.hex"
-            , prefix <> "-inputs.hex"
-            , prefix <> "-outputs.hex"
-            , "--slot-length"
-            , show (slotLengthMs cfg)
-            , "--zero-time"
-            , show (systemStartPosixMs cfg)
-            , "--zero-slot"
-            , "0"
-            , "--blueprint"
-            , bpPath
-            ]
-            ""
-    putStrLn
-        $ "Exit: " <> show exitCode
-    putStrLn $ "Stdout:\n" <> stdout'
-    putStrLn $ "Stderr:\n" <> stderr'
+    result <- try $ readProcessWithExitCode
+        "aiken"
+        [ "tx"
+        , "simulate"
+        , prefix <> "-tx.hex"
+        , prefix <> "-inputs.hex"
+        , prefix <> "-outputs.hex"
+        , "--slot-length"
+        , show (slotLengthMs cfg)
+        , "--zero-time"
+        , show (systemStartPosixMs cfg)
+        , "--zero-slot"
+        , "0"
+        , "--blueprint"
+        , bpPath
+        ]
+        ""
+    case result of
+        Left (e :: SomeException) ->
+            putStrLn
+                $ "aiken not available: "
+                    <> show e
+        Right (exitCode, stdout', stderr') -> do
+            putStrLn
+                $ "Exit: " <> show exitCode
+            putStrLn
+                $ "Stdout:\n" <> stdout'
+            putStrLn
+                $ "Stderr:\n" <> stderr'
 
 -- | Encode a 'ByteString' to hex.
 toHex :: BS.ByteString -> BS.ByteString

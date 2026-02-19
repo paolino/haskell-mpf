@@ -59,12 +59,28 @@ import System.Process
 
 -- | Run a @cardano-node@ subprocess using the
 -- genesis files from @srcGenesis@. The callback
--- receives the node socket path. The node and its
--- temp directory are cleaned up on exit.
+-- receives the node socket path and the system
+-- start time (POSIX ms) used in the genesis.
+-- The node and its temp directory are cleaned up
+-- on exit.
 withCardanoNode
-    :: FilePath -> (FilePath -> IO a) -> IO a
+    :: FilePath
+    -> (FilePath -> Integer -> IO a)
+    -> IO a
 withCardanoNode srcGenesis action = do
-    tmpDir <- prepareTmpDir srcGenesis
+    now <- getCurrentTime
+    let startTime = addUTCTime startOffset now
+        -- Truncate to whole seconds to match the
+        -- genesis file format (%H:%M:%SZ — no
+        -- fractional seconds). Without this, the
+        -- CageConfig's systemStartPosixMs would
+        -- include sub-second precision that the
+        -- node doesn't see, causing slot-to-POSIX
+        -- conversion drift.
+        startMs =
+            floor (utcTimeToPOSIXSeconds startTime)
+                * 1000
+    tmpDir <- prepareTmpDir srcGenesis startTime
     logH <- openFile (tmpDir </> "node.log") WriteMode
     hSetBuffering logH LineBuffering
     bracket
@@ -73,14 +89,15 @@ withCardanoNode srcGenesis action = do
         $ \_ -> do
             let sock = tmpDir </> "node.sock"
             waitForSocket sock 300
-            action sock
+            action sock startMs
                 `onException` dumpNodeLog
                     (tmpDir </> "node.log")
 
 -- | Prepare a temporary directory with patched
 -- genesis files and delegate keys.
-prepareTmpDir :: FilePath -> IO FilePath
-prepareTmpDir srcGenesis = do
+prepareTmpDir
+    :: FilePath -> UTCTime -> IO FilePath
+prepareTmpDir srcGenesis startTime = do
     sysTmp <- getTemporaryDirectory
     let tmpDir = sysTmp </> "cardano-mpfs-e2e"
     removePathForcibly tmpDir
@@ -100,11 +117,7 @@ prepareTmpDir srcGenesis = do
     cp "conway-genesis.json"
     cp "node-config.json"
     cp "topology.json"
-    -- Patch genesis start times to a few seconds
-    -- in the future so the node has time to
-    -- initialise before the first slot.
-    now <- getCurrentTime
-    let startTime = addUTCTime startOffset now
+    -- Patch genesis start times
     patchShelleyGenesis startTime srcGenesis tmpDir
     patchByronGenesis startTime srcGenesis tmpDir
     -- Copy delegate keys and restrict permissions
