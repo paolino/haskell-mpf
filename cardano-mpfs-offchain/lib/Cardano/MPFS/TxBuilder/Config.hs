@@ -22,9 +22,9 @@ import Cardano.MPFS.Types (Coin)
 data CageConfig = CageConfig
     { cageScriptBytes :: !ShortByteString
     -- ^ Raw PlutusV3 script bytes (from blueprint)
-    , processTime :: !Integer
+    , defaultProcessTime :: !Integer
     -- ^ Phase 1 window (ms) for oracle processing
-    , retractTime :: !Integer
+    , defaultRetractTime :: !Integer
     -- ^ Phase 2 window (ms) for requester retract
     , defaultMaxFee :: !Coin
     -- ^ Default max fee for newly booted tokens

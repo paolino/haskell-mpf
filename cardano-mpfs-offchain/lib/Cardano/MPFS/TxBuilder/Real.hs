@@ -312,6 +312,10 @@ bootTokenImpl cfg prov addr = do
                                 let Coin c =
                                         defaultMaxFee cfg
                                 in  c
+                            , stateProcessTime =
+                                defaultProcessTime cfg
+                            , stateRetractTime =
+                                defaultRetractTime cfg
                             }
                 datumData = toPlcData stateDatum
             -- 4. Build output with ada + token

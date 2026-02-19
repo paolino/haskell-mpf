@@ -130,6 +130,8 @@ data OnChainTokenState = OnChainTokenState
     { stateOwner :: !BuiltinByteString
     , stateRoot :: !OnChainRoot
     , stateMaxFee :: !Integer
+    , stateProcessTime :: !Integer
+    , stateRetractTime :: !Integer
     }
     deriving stock (Show, Eq)
 
@@ -182,7 +184,7 @@ data UpdateRedeemer
     | -- | Fold requests with proofs (Constr 2)
       Modify ![[ProofStep]]
     | -- | Reclaim a pending request (Constr 3)
-      Retract
+      Retract !OnChainTxOutRef
     | -- | Reject expired requests (Constr 4)
       Reject
     deriving stock (Show, Eq)
@@ -388,26 +390,32 @@ instance ToData OnChainTokenState where
                 [ bbsToD stateOwner
                 , unD (toBuiltinData stateRoot)
                 , I stateMaxFee
+                , I stateProcessTime
+                , I stateRetractTime
                 ]
 
 instance FromData OnChainTokenState where
     fromBuiltinData bd = case unD bd of
-        Constr 0 [own, r, I mf] -> do
+        Constr 0 [own, r, I mf, I pt, I rt] -> do
             stateOwner <- bbsFromD own
             stateRoot <- fromBuiltinData (mkD r)
             let stateMaxFee = mf
+                stateProcessTime = pt
+                stateRetractTime = rt
             Just OnChainTokenState{..}
         _ -> Nothing
 
 instance UnsafeFromData OnChainTokenState where
     unsafeFromBuiltinData bd = case unD bd of
-        Constr 0 [B own, r, I mf] ->
+        Constr 0 [B own, r, I mf, I pt, I rt] ->
             OnChainTokenState
                 { stateOwner =
                     BuiltinByteString own
                 , stateRoot =
                     unsafeFromBuiltinData (mkD r)
                 , stateMaxFee = mf
+                , stateProcessTime = pt
+                , stateRetractTime = rt
                 }
         _ ->
             error
@@ -605,7 +613,8 @@ instance ToData UpdateRedeemer where
                         proofs
                     )
                 ]
-    toBuiltinData Retract = mkD $ Constr 3 []
+    toBuiltinData (Retract ref) =
+        mkD $ Constr 3 [unD (toBuiltinData ref)]
     toBuiltinData Reject = mkD $ Constr 4 []
 
 instance FromData UpdateRedeemer where
@@ -621,7 +630,8 @@ instance FromData UpdateRedeemer where
                     (fromBuiltinData . mkD)
                     steps
             parseProof _ = Nothing
-        Constr 3 [] -> Just Retract
+        Constr 3 [d] ->
+            Retract <$> fromBuiltinData (mkD d)
         Constr 4 [] -> Just Reject
         _ -> Nothing
 
@@ -640,7 +650,9 @@ instance UnsafeFromData UpdateRedeemer where
                 error
                     "unsafeFromBuiltinData:\
                     \ UpdateRedeemer"
-        Constr 3 [] -> Retract
+        Constr 3 [d] ->
+            Retract
+                $ unsafeFromBuiltinData (mkD d)
         Constr 4 [] -> Reject
         _ ->
             error
@@ -652,38 +664,37 @@ instance UnsafeFromData UpdateRedeemer where
 -- ---------------------------------------------------------
 
 -- | The cage validator script hash (raw 28 bytes).
--- Versioned with @cardano-mpfs-onchain v0.1.0@.
 cageScriptHash :: ByteString
 cageScriptHash =
     BS.pack
-        [ 0x45
-        , 0x0c
-        , 0x46
-        , 0x65
-        , 0xb8
-        , 0xf4
-        , 0x60
-        , 0x4a
-        , 0x38
-        , 0x6e
-        , 0x96
-        , 0xba
-        , 0xb8
-        , 0x8c
-        , 0x2d
-        , 0x5b
-        , 0x24
-        , 0xdb
-        , 0xee
-        , 0x2f
-        , 0xa4
-        , 0x91
-        , 0x87
-        , 0xeb
-        , 0xc6
-        , 0x7e
+        [ 0x7f
+        , 0xbe
+        , 0xb9
+        , 0xca
+        , 0x9c
+        , 0xbd
+        , 0x42
+        , 0xaf
+        , 0x3d
         , 0xf0
-        , 0x86
+        , 0x70
+        , 0xf0
+        , 0xff
+        , 0xb8
+        , 0xc5
+        , 0x16
+        , 0xe2
+        , 0x83
+        , 0xda
+        , 0x31
+        , 0xfe
+        , 0x04
+        , 0x9e
+        , 0x03
+        , 0xfe
+        , 0xce
+        , 0x89
+        , 0xb8
         ]
 
 -- | The cage validator 'ScriptHash' (ledger type).

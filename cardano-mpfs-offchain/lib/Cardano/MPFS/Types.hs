@@ -113,6 +113,10 @@ data TokenState = TokenState
     -- ^ Current root hash of the token's trie
     , maxFee :: !Coin
     -- ^ Maximum fee charged per request
+    , processTime :: !Integer
+    -- ^ Duration (ms) of the oracle processing window
+    , retractTime :: !Integer
+    -- ^ Duration (ms) of the requester retract window
     }
     deriving (Eq, Show)
 

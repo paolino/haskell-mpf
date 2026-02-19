@@ -147,6 +147,12 @@ instance Arbitrary OnChainTokenState where
             <*> ( fromIntegral
                     <$> (arbitrary :: Gen Int)
                 )
+            <*> ( fromIntegral
+                    <$> (arbitrary :: Gen Int)
+                )
+            <*> ( fromIntegral
+                    <$> (arbitrary :: Gen Int)
+                )
 
 instance Arbitrary CageDatum where
     arbitrary =
@@ -202,7 +208,7 @@ instance Arbitrary UpdateRedeemer where
             , Modify
                 <$> listOf
                     (listOf arbitrary)
-            , pure Retract
+            , Retract <$> arbitrary
             , pure Reject
             ]
 
@@ -247,9 +253,15 @@ spec = do
         it "End encodes to Constr 0 []"
             $ toData' End
             `shouldBe` Constr 0 []
-        it "Retract encodes to Constr 3 []"
-            $ toData' Retract
-            `shouldBe` Constr 3 []
+        it "Retract encodes to Constr 3 [ref]" $ do
+            let ref =
+                    OnChainTxOutRef
+                        (BuiltinByteString "tx")
+                        7
+            toData' (Retract ref)
+                `shouldBe` Constr
+                    3
+                    [Constr 0 [B "tx", I 7]]
         it "Reject encodes to Constr 4 []"
             $ toData' Reject
             `shouldBe` Constr 4 []
@@ -264,13 +276,20 @@ spec = do
                         , stateRoot =
                             OnChainRoot "rt"
                         , stateMaxFee = 1000
+                        , stateProcessTime = 300
+                        , stateRetractTime = 600
                         }
             toData' (StateDatum st)
                 `shouldBe` Constr
                     1
                     [ Constr
                         0
-                        [B "own", B "rt", I 1000]
+                        [ B "own"
+                        , B "rt"
+                        , I 1000
+                        , I 300
+                        , I 600
+                        ]
                     ]
 
     describe "Asset-name derivation" $ do

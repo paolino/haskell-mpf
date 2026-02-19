@@ -102,14 +102,22 @@ genTxIn = do
 genCoin :: Gen Coin
 genCoin = Coin <$> choose (0, 10_000_000)
 
+-- | Generate a POSIXTime (ms).
+genPosixTime :: Gen Integer
+genPosixTime =
+    fromIntegral
+        <$> choose (0 :: Int, 2_000_000_000)
+
 -- | Generate a 'TokenState' with random owner,
--- root, and maxFee.
+-- root, maxFee, processTime, and retractTime.
 genTokenState :: Gen TokenState
 genTokenState =
     TokenState
         <$> genKeyHash
         <*> genRoot
         <*> genCoin
+        <*> genPosixTime
+        <*> genPosixTime
 
 -- | Generate a random 'Operation'.
 genOperation :: Gen Operation

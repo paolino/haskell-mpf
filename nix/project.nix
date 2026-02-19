@@ -1,4 +1,5 @@
-{ CHaP, indexState, pkgs, mkdocs, asciinema, cardano-node-pkgs, mpfs-blueprint, ... }:
+{ CHaP, indexState, pkgs, mkdocs, asciinema, cardano-node-pkgs, mpfs-blueprint
+, ... }:
 
 let
   indexTool = { index-state = indexState; };

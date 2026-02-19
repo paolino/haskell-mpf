@@ -129,8 +129,8 @@ testCageConfig :: CageConfig
 testCageConfig =
     CageConfig
         { cageScriptBytes = SBS.toShort "dummy"
-        , processTime = 300_000
-        , retractTime = 600_000
+        , defaultProcessTime = 300_000
+        , defaultRetractTime = 600_000
         , defaultMaxFee = Coin 1_000_000
         , network = Testnet
         }
@@ -316,8 +316,8 @@ bootTokenWithScript scriptBytes = do
     let cfg =
             CageConfig
                 { cageScriptBytes = scriptBytes
-                , processTime = 300_000
-                , retractTime = 600_000
+                , defaultProcessTime = 300_000
+                , defaultRetractTime = 600_000
                 , defaultMaxFee = Coin 1_000_000
                 , network = Testnet
                 }
@@ -436,6 +436,8 @@ mkTestFixture = do
                 { owner = testKh
                 , root = Root (BS.replicate 32 0)
                 , maxFee = Coin 1_000_000
+                , processTime = 300_000
+                , retractTime = 600_000
                 }
     putToken (tokens st) testTid ts
     txIn <- generate genTxIn
