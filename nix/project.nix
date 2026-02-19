@@ -32,6 +32,7 @@ let
       pkgs.asciinema
       cardano-node-pkgs.cardano-node
       cardano-node-pkgs.cardano-cli
+      pkgs.aiken
     ];
     shellHook = ''
       echo "Entering merkle-patricia-forestry dev shell"
