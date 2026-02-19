@@ -84,7 +84,7 @@ spec =
                                 tx = mkBasicTx body
                             case balanceTx
                                 pp
-                                feeUtxo
+                                [feeUtxo]
                                 genesisAddr
                                 tx of
                                 Left err ->

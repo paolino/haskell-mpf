@@ -12,6 +12,9 @@ module Cardano.MPFS.TxBuilder.Real
     ( -- * Construction
       mkRealTxBuilder
 
+      -- * Script hash
+    , computeScriptHash
+
       -- * Internals (for testing)
     , mkInlineDatum
     , toPlcData
@@ -29,7 +32,8 @@ import Cardano.MPFS.TxBuilder.Real.Boot
     ( bootTokenImpl
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
-    ( extractCageDatum
+    ( computeScriptHash
+    , extractCageDatum
     , mkInlineDatum
     , toPlcData
     )

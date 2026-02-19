@@ -28,6 +28,9 @@ module Cardano.MPFS.Blueprint
 
       -- * Compiled code extraction
     , extractCompiledCode
+
+      -- * Parameter application
+    , applyVersion
     ) where
 
 import Data.Aeson
@@ -47,7 +50,20 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Word (Word8)
+import PlutusCore qualified as PLC
 import PlutusCore.Data (Data (..))
+import PlutusLedgerApi.V3
+    ( serialiseUPLC
+    , uncheckedDeserialiseUPLC
+    )
+import UntypedPlutusCore
+    ( Program (..)
+    , applyProgram
+    )
+import UntypedPlutusCore qualified as UPLC
+import UntypedPlutusCore.DeBruijn ()
+
+-- Flat instances
 
 -- | A single constructor alternative in a schema.
 data Constructor = Constructor
@@ -287,3 +303,43 @@ decodeHex t
                 $ fromIntegral
                     (fromEnum c - fromEnum 'A' + 10)
         | otherwise = Nothing
+
+-- | Apply the version parameter to a UPLC script.
+-- The blueprint's @compiledCode@ is a flat-encoded
+-- UPLC program that expects one parameter (the
+-- version integer). This function applies the
+-- integer, producing the final script bytes.
+applyVersion
+    :: Integer
+    -> SBS.ShortByteString
+    -> SBS.ShortByteString
+applyVersion ver sbs =
+    let
+        -- 1. Decode flat → Program
+        prog = uncheckedDeserialiseUPLC sbs
+        -- 2. Build a program wrapping the integer
+        argProg =
+            Program
+                ()
+                (progVer prog)
+                ( UPLC.Constant
+                    ()
+                    ( PLC.Some
+                        ( PLC.ValueOf
+                            PLC.DefaultUniData
+                            (I ver)
+                        )
+                    )
+                )
+        -- 3. Apply: prog arg
+        applied = case applyProgram prog argProg of
+            Right p -> p
+            Left e ->
+                error
+                    $ "applyVersion: "
+                        <> show e
+    in
+        -- 4. Re-encode to flat
+        serialiseUPLC applied
+  where
+    progVer (Program _ v _) = v

@@ -16,6 +16,7 @@ module Cardano.MPFS.Balance
     , BalanceError (..)
     ) where
 
+import Data.Foldable (foldl')
 import Data.Sequence.Strict ((|>))
 import Data.Set qualified as Set
 import Lens.Micro ((&), (.~), (^.))
@@ -51,8 +52,8 @@ data BalanceError
       InsufficientFee !Coin !Coin
     deriving (Eq, Show)
 
--- | Balance a transaction by adding a fee-paying
--- UTxO and a change output.
+-- | Balance a transaction by adding input UTxOs
+-- and a change output.
 --
 -- One additional key witness is assumed for the fee
 -- input. The fee is found by iterating
@@ -62,28 +63,51 @@ data BalanceError
 -- stabilises.
 balanceTx
     :: PParams ConwayEra
-    -> (TxIn, TxOut ConwayEra)
-    -- ^ Fee-paying UTxO
+    -> [(TxIn, TxOut ConwayEra)]
+    -- ^ All input UTxOs to add (fee-paying and any
+    -- script inputs not yet in the body). Their
+    -- 'TxIn's are unioned with the body's inputs.
     -> Addr
     -- ^ Change address
     -> Tx ConwayEra
     -- ^ Unbalanced transaction
     -> Either BalanceError (Tx ConwayEra)
-balanceTx pp (feeInput, feeUtxo) changeAddr tx =
+balanceTx pp inputUtxos changeAddr tx =
     let body = tx ^. bodyTxL
-        inputCoin = feeUtxo ^. coinTxOutL
+        inputCoin =
+            foldl'
+                ( \(Coin acc) (_, o) ->
+                    let Coin c = o ^. coinTxOutL
+                    in  Coin (acc + c)
+                )
+                (Coin 0)
+                inputUtxos
         newInputs =
-            Set.insert
-                feeInput
+            foldl'
+                (\s (tin, _) -> Set.insert tin s)
                 (body ^. inputsTxBodyL)
+                inputUtxos
         origOutputs = body ^. outputsTxBodyL
+        -- Sum ADA already committed in existing
+        -- outputs (e.g. cage output with 2 ADA).
+        Coin origAda =
+            foldl'
+                ( \(Coin acc) o ->
+                    let Coin c = o ^. coinTxOutL
+                    in  Coin (acc + c)
+                )
+                (Coin 0)
+                origOutputs
         -- Build a candidate tx for a given fee.
         -- Change is clamped to 0 so fee estimation
         -- works even when funds are insufficient.
         buildTx f =
             let Coin avail = inputCoin
                 Coin req = f
-                change = max 0 (avail - req)
+                change =
+                    max
+                        0
+                        (avail - req - origAda)
                 changeOut =
                     mkBasicTxOut
                         changeAddr
@@ -121,7 +145,8 @@ balanceTx pp (feeInput, feeUtxo) changeAddr tx =
         fee = go 0 initFee
         Coin available = inputCoin
         Coin required = fee
-        changeAmount = available - required
+        changeAmount =
+            available - required - origAda
     in  if changeAmount < 0
             then
                 Left (InsufficientFee fee inputCoin)

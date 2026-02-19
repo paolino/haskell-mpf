@@ -10,8 +10,11 @@ module Cardano.MPFS.TxBuilder.Real.Request
     ) where
 
 import Data.ByteString (ByteString)
+import Data.List (sortOn)
+import Data.Ord (Down (..))
 import Data.Sequence.Strict qualified as StrictSeq
-import Lens.Micro ((&), (.~))
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import Lens.Micro ((&), (.~), (^.))
 
 import Cardano.Ledger.Address (Addr)
 import Cardano.Ledger.Api.Tx
@@ -23,7 +26,8 @@ import Cardano.Ledger.Api.Tx.Body
     , outputsTxBodyL
     )
 import Cardano.Ledger.Api.Tx.Out
-    ( datumTxOutL
+    ( coinTxOutL
+    , datumTxOutL
     , mkBasicTxOut
     )
 import Cardano.Ledger.BaseTypes (Inject (..))
@@ -31,7 +35,6 @@ import Cardano.Ledger.BaseTypes (Inject (..))
 import Cardano.MPFS.Balance (balanceTx)
 import Cardano.MPFS.OnChain
     ( OnChainOperation (..)
-    , cageAddr
     )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.State (State (..), Tokens (..))
@@ -69,10 +72,13 @@ requestInsertImpl cfg prov st tid key value addr =
             Just x -> pure x
         pp <- queryProtocolParams prov
         utxos <- queryUTxOs prov addr
-        feeUtxo <- case utxos of
+        feeUtxo <- case sortOn
+            (Down . (^. coinTxOutL) . snd)
+            utxos of
             [] ->
                 error "requestInsert: no UTxOs"
             (u : _) -> pure u
+        now <- currentPosixMs
         let datum =
                 mkRequestDatum
                     tid
@@ -80,7 +86,8 @@ requestInsertImpl cfg prov st tid key value addr =
                     key
                     (OpInsert value)
                     mf
-            scriptAddr = cageAddr (network cfg)
+                    now
+            scriptAddr = cageAddrFromCfg cfg (network cfg)
             minAda = Coin (2_000_000 + mf)
             txOut =
                 mkBasicTxOut
@@ -94,7 +101,7 @@ requestInsertImpl cfg prov st tid key value addr =
                         .~ StrictSeq.singleton
                             txOut
             tx = mkBasicTx body
-        case balanceTx pp feeUtxo addr tx of
+        case balanceTx pp [feeUtxo] addr tx of
             Left err ->
                 error
                     $ "requestInsert: "
@@ -119,9 +126,12 @@ requestDeleteImpl cfg prov st tid key addr = do
         Just x -> pure x
     pp <- queryProtocolParams prov
     utxos <- queryUTxOs prov addr
-    feeUtxo <- case utxos of
+    feeUtxo <- case sortOn
+        (Down . (^. coinTxOutL) . snd)
+        utxos of
         [] -> error "requestDelete: no UTxOs"
         (u : _) -> pure u
+    now <- currentPosixMs
     let datum =
             mkRequestDatum
                 tid
@@ -129,7 +139,8 @@ requestDeleteImpl cfg prov st tid key addr = do
                 key
                 (OpDelete key)
                 mf
-        scriptAddr = cageAddr (network cfg)
+                now
+        scriptAddr = cageAddrFromCfg cfg (network cfg)
         minAda = Coin (2_000_000 + mf)
         txOut =
             mkBasicTxOut
@@ -142,9 +153,15 @@ requestDeleteImpl cfg prov st tid key addr = do
                 & outputsTxBodyL
                     .~ StrictSeq.singleton txOut
         tx = mkBasicTx body
-    case balanceTx pp feeUtxo addr tx of
+    case balanceTx pp [feeUtxo] addr tx of
         Left err ->
             error
                 $ "requestDelete: "
                     <> show err
         Right balanced -> pure balanced
+
+-- | Get current POSIX time in milliseconds.
+currentPosixMs :: IO Integer
+currentPosixMs = do
+    t <- getPOSIXTime
+    pure $ floor (t * 1000)

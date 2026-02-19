@@ -16,6 +16,9 @@ import Lens.Micro ((&), (.~))
 
 import Cardano.Ledger.Address (Addr)
 import Cardano.Ledger.Alonzo.Scripts (AsIx (..))
+import Cardano.Ledger.Alonzo.TxBody
+    ( scriptIntegrityHashTxBodyL
+    )
 import Cardano.Ledger.Api.Tx
     ( Tx
     , mkBasicTx
@@ -56,8 +59,6 @@ import Cardano.MPFS.OnChain
     , MintRedeemer (..)
     , OnChainRoot (..)
     , OnChainTokenState (..)
-    , cageAddr
-    , cagePolicyId
     , deriveAssetName
     )
 import Cardano.MPFS.Provider (Provider (..))
@@ -88,9 +89,9 @@ bootTokenImpl cfg prov addr = do
         [] -> error "bootToken: no UTxOs"
         (seedUtxo : rest) -> do
             let (seedRef, _seedOut) = seedUtxo
-                feeUtxo = case rest of
-                    [] -> seedUtxo
-                    (u : _) -> u
+                allInputUtxos = case rest of
+                    [] -> [seedUtxo]
+                    (u : _) -> [seedUtxo, u]
             -- 1. Derive asset name from seed
             let onChainRef = txInToRef seedRef
                 assetNameBs =
@@ -99,10 +100,12 @@ bootTokenImpl cfg prov addr = do
                     AssetName
                         (SBS.toShort assetNameBs)
             -- 2. Build mint value (+1 token)
-            let mintMA =
+            let policyId =
+                    cagePolicyIdFromCfg cfg
+                mintMA =
                     MultiAsset
                         $ Map.singleton
-                            cagePolicyId
+                            policyId
                         $ Map.singleton
                             assetName
                             1
@@ -127,7 +130,9 @@ bootTokenImpl cfg prov addr = do
                 datumData = toPlcData stateDatum
             -- 4. Build output with ada + token
             let scriptAddr =
-                    cageAddr (network cfg)
+                    cageAddrFromCfg
+                        cfg
+                        (network cfg)
                 outValue =
                     MaryValue
                         (Coin 2_000_000)
@@ -154,7 +159,11 @@ bootTokenImpl cfg prov addr = do
                             , defaultMintExUnits
                             )
             -- 6. Build tx body
-            let body =
+            let integrity =
+                    computeScriptIntegrity
+                        pp
+                        redeemers
+                body =
                     mkBasicTxBody
                         & inputsTxBodyL
                             .~ Set.singleton
@@ -165,7 +174,11 @@ bootTokenImpl cfg prov addr = do
                         & mintTxBodyL .~ mintMA
                         & collateralInputsTxBodyL
                             .~ Set.singleton
-                                (fst feeUtxo)
+                                ( fst
+                                    $ last allInputUtxos
+                                )
+                        & scriptIntegrityHashTxBodyL
+                            .~ integrity
                 tx =
                     mkBasicTx body
                         & witsTxL . scriptTxWitsL
@@ -175,7 +188,11 @@ bootTokenImpl cfg prov addr = do
                         & witsTxL . rdmrsTxWitsL
                             .~ redeemers
             -- 7. Balance
-            case balanceTx pp feeUtxo addr tx of
+            case balanceTx
+                pp
+                allInputUtxos
+                addr
+                tx of
                 Left err ->
                     error
                         $ "bootToken: "

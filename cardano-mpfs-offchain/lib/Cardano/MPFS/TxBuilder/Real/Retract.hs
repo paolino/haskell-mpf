@@ -6,12 +6,21 @@ module Cardano.MPFS.TxBuilder.Real.Retract
     ( retractRequestImpl
     ) where
 
+import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
+import Data.Ord (Down (..))
 import Data.Set qualified as Set
-import Lens.Micro ((&), (.~))
+import Lens.Micro ((&), (.~), (^.))
 
 import Cardano.Ledger.Address (Addr)
+import Cardano.Ledger.Allegra.Scripts
+    ( ValidityInterval (..)
+    )
 import Cardano.Ledger.Alonzo.Scripts (AsIx (..))
+import Cardano.Ledger.Alonzo.TxBody
+    ( reqSignerHashesTxBodyL
+    , scriptIntegrityHashTxBodyL
+    )
 import Cardano.Ledger.Api.Tx
     ( Tx
     , mkBasicTx
@@ -22,11 +31,18 @@ import Cardano.Ledger.Api.Tx.Body
     , inputsTxBodyL
     , mkBasicTxBody
     , referenceInputsTxBodyL
+    , vldtTxBodyL
+    )
+import Cardano.Ledger.Api.Tx.Out
+    ( coinTxOutL
     )
 import Cardano.Ledger.Api.Tx.Wits
     ( Redeemers (..)
     , rdmrsTxWitsL
     , scriptTxWitsL
+    )
+import Cardano.Ledger.BaseTypes
+    ( StrictMaybe (SJust)
     )
 import Cardano.Ledger.Conway.Scripts
     ( ConwayPlutusPurpose (..)
@@ -36,8 +52,10 @@ import Cardano.Ledger.TxIn (TxIn)
 
 import Cardano.MPFS.Balance (balanceTx)
 import Cardano.MPFS.OnChain
-    ( UpdateRedeemer (..)
-    , cageAddr
+    ( CageDatum (..)
+    , OnChainRequest (..)
+    , OnChainTokenState (..)
+    , UpdateRedeemer (..)
     )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.State
@@ -52,12 +70,15 @@ import Cardano.MPFS.Types
     ( ConwayEra
     , Request (..)
     )
+import PlutusTx.Builtins.Internal
+    ( BuiltinByteString (..)
+    )
 
 -- | Build a retract-request transaction.
 --
 -- The requester spends their request UTxO
 -- (returning locked ADA) while referencing the
--- state UTxO.
+-- state UTxO. Requires Phase 2 validity.
 retractRequestImpl
     :: CageConfig
     -> Provider IO
@@ -73,39 +94,77 @@ retractRequestImpl cfg prov st reqTxIn addr = do
             error "retractRequest: unknown request"
         Just x -> pure x
     -- 2. Query cage UTxOs to find request + state
-    let scriptAddr = cageAddr (network cfg)
+    let scriptAddr = cageAddrFromCfg cfg (network cfg)
     cageUtxos <- queryUTxOs prov scriptAddr
     let reqUtxo = findUtxoByTxIn reqTxIn cageUtxos
-    (reqIn, _reqOut) <- case reqUtxo of
+    reqUtxoPair <- case reqUtxo of
         Nothing ->
             error
                 "retractRequest: request UTxO \
                 \not found on chain"
         Just x -> pure x
+    let (reqIn, reqOut) = reqUtxoPair
     -- 3. Find state UTxO for this token
     let Request{requestToken = tid} = req
+        policyId = cagePolicyIdFromCfg cfg
     stateUtxo <-
-        case findStateUtxo tid cageUtxos of
+        case findStateUtxo policyId tid cageUtxos of
             Nothing ->
                 error
                     "retractRequest: state UTxO \
                     \not found"
             Just x -> pure x
-    let (stateIn, _stateOut) = stateUtxo
+    let (stateIn, stateOut) = stateUtxo
     -- 4. Get wallet UTxO for fees
     pp <- queryProtocolParams prov
     walletUtxos <- queryUTxOs prov addr
-    feeUtxo <- case walletUtxos of
+    feeUtxo <- case sortOn
+        (Down . (^. coinTxOutL) . snd)
+        walletUtxos of
         [] -> error "retractRequest: no UTxOs"
         (u : _) -> pure u
-    -- 5. Build tx
+    -- 5. Extract request owner for required signer
+    -- 5. Extract request datum fields
+    let reqDatum = case extractCageDatum reqOut of
+            Just (RequestDatum r) -> r
+            _ ->
+                error
+                    "retractRequest: invalid \
+                    \request datum"
+        OnChainRequest
+            { requestOwner =
+                BuiltinByteString ownerBs
+            , requestSubmittedAt = submAt
+            } = reqDatum
+        ownerKh = addrWitnessKeyHash ownerBs
+    -- 5b. Read process_time and retract_time
+    -- from the state datum
+    let stateDatum = case extractCageDatum stateOut of
+            Just (StateDatum s) -> s
+            _ ->
+                error
+                    "retractRequest: invalid \
+                    \state datum"
+        OnChainTokenState
+            { stateProcessTime = procTime
+            , stateRetractTime = retrTime
+            } = stateDatum
+    -- 6. Build tx with Retract redeemer
+    --    (Retract takes the STATE UTxO reference)
+    -- Phase 2: entirely_after(submitted_at +
+    --   process_time - 1) AND entirely_before(
+    --   submitted_at + process_time + retract_time)
+    let phase2Start = submAt + procTime
+        phase2End = submAt + procTime + retrTime
+        lowerSlot = posixMsToSlot cfg phase2Start
+        upperSlot = posixMsToSlot cfg phase2End
     let script = mkCageScript cfg
         scriptHash = hashScript script
         allInputs =
             Set.fromList [reqIn, fst feeUtxo]
         reqIx = spendingIndex reqIn allInputs
-        reqRef = txInToRef reqIn
-        redeemer = Retract reqRef
+        stateRef = txInToRef stateIn
+        redeemer = Retract stateRef
         spendPurpose =
             ConwaySpending (AsIx reqIx)
         redeemers =
@@ -115,6 +174,12 @@ retractRequestImpl cfg prov st reqTxIn addr = do
                     ( toLedgerData redeemer
                     , defaultSpendExUnits
                     )
+        integrity =
+            computeScriptIntegrity pp redeemers
+        vldt =
+            ValidityInterval
+                (SJust lowerSlot)
+                (SJust upperSlot)
         body =
             mkBasicTxBody
                 & inputsTxBodyL
@@ -124,6 +189,11 @@ retractRequestImpl cfg prov st reqTxIn addr = do
                 & collateralInputsTxBodyL
                     .~ Set.singleton
                         (fst feeUtxo)
+                & reqSignerHashesTxBodyL
+                    .~ Set.singleton ownerKh
+                & vldtTxBodyL .~ vldt
+                & scriptIntegrityHashTxBodyL
+                    .~ integrity
         tx =
             mkBasicTx body
                 & witsTxL . scriptTxWitsL
@@ -132,7 +202,11 @@ retractRequestImpl cfg prov st reqTxIn addr = do
                         script
                 & witsTxL . rdmrsTxWitsL
                     .~ redeemers
-    case balanceTx pp feeUtxo addr tx of
+    case balanceTx
+        pp
+        [feeUtxo, reqUtxoPair]
+        addr
+        tx of
         Left err ->
             error
                 $ "retractRequest: "

@@ -10,6 +10,7 @@ module Cardano.MPFS.TxBuilder.Config
 import Data.ByteString.Short (ShortByteString)
 
 import Cardano.Ledger.BaseTypes (Network)
+import Cardano.Ledger.Hashes (ScriptHash)
 
 import Cardano.MPFS.Types (Coin)
 
@@ -17,11 +18,14 @@ import Cardano.MPFS.Types (Coin)
 -- builders.
 --
 -- The 'cageScriptBytes' field holds the raw
--- double-CBOR-encoded PlutusV3 script extracted
--- from the CIP-57 blueprint (@plutus.json@).
+-- flat-encoded UPLC script (after parameter
+-- application). The 'cfgScriptHash' is the
+-- hash of the deserialized script.
 data CageConfig = CageConfig
     { cageScriptBytes :: !ShortByteString
-    -- ^ Raw PlutusV3 script bytes (from blueprint)
+    -- ^ PlutusV3 script bytes (applied parameters)
+    , cfgScriptHash :: !ScriptHash
+    -- ^ Hash of the PlutusV3 script
     , defaultProcessTime :: !Integer
     -- ^ Phase 1 window (ms) for oracle processing
     , defaultRetractTime :: !Integer
@@ -30,4 +34,8 @@ data CageConfig = CageConfig
     -- ^ Default max fee for newly booted tokens
     , network :: !Network
     -- ^ Target network (Mainnet or Testnet)
+    , systemStartPosixMs :: !Integer
+    -- ^ Genesis system start as POSIX time (ms)
+    , slotLengthMs :: !Integer
+    -- ^ Slot length in milliseconds (e.g. 100)
     }

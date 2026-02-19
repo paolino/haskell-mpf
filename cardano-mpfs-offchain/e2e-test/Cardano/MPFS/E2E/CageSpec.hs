@@ -1,6 +1,8 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 -- |
 -- Module      : Cardano.MPFS.E2E.CageSpec
@@ -10,10 +12,17 @@ module Cardano.MPFS.E2E.CageSpec (spec) where
 
 import Control.Concurrent (threadDelay)
 import Data.ByteString qualified as BS
-import Data.ByteString.Short (ShortByteString)
+import Data.ByteString.Char8 qualified as BS8
+import Data.ByteString.Lazy qualified as BSL
+import Data.ByteString.Short qualified as SBS
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Word (Word8)
 import Lens.Micro ((^.))
 import System.Environment (lookupEnv)
+import System.FilePath (takeDirectory, (</>))
+import System.Process (readProcessWithExitCode)
 import Test.Hspec
     ( Spec
     , describe
@@ -28,11 +37,19 @@ import Cardano.Ledger.Api.Tx
     , bodyTxL
     , txIdTx
     )
-import Cardano.Ledger.Api.Tx.Body (mintTxBodyL)
+import Cardano.Ledger.Api.Tx.Body
+    ( inputsTxBodyL
+    , mintTxBodyL
+    , outputsTxBodyL
+    , referenceInputsTxBodyL
+    )
+import Cardano.Ledger.Api.Tx.Out (TxOut)
 import Cardano.Ledger.BaseTypes
     ( Network (..)
     , TxIx (..)
     )
+import Cardano.Ledger.Binary (serialize)
+import Cardano.Ledger.Core (eraProtVerLow)
 import Cardano.Ledger.Mary.Value
     ( MultiAsset (..)
     )
@@ -43,7 +60,8 @@ import Cardano.MPFS.Application
     , withApplication
     )
 import Cardano.MPFS.Blueprint
-    ( extractCompiledCode
+    ( applyVersion
+    , extractCompiledCode
     , loadBlueprint
     )
 import Cardano.MPFS.Context (Context (..))
@@ -55,10 +73,6 @@ import Cardano.MPFS.E2E.Setup
     , genesisDir
     , genesisSignKey
     , keyHashFromSignKey
-    )
-import Cardano.MPFS.OnChain
-    ( cageAddr
-    , cagePolicyId
     )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.State
@@ -75,9 +89,13 @@ import Cardano.MPFS.TxBuilder (TxBuilder (..))
 import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
+import Cardano.MPFS.TxBuilder.Real.Internal
+    ( cageAddrFromCfg
+    , cagePolicyIdFromCfg
+    , computeScriptHash
+    )
 import Cardano.MPFS.Types
-    ( AssetName (..)
-    , Coin (..)
+    ( Coin (..)
     , ConwayEra
     , Operation (..)
     , Request (..)
@@ -118,8 +136,13 @@ spec = describe "Cage E2E" $ do
                                     "cage script not \
                                     \found in blueprint"
                         Just scriptBytes ->
-                            cageFlowSpec
-                                scriptBytes
+                            let applied =
+                                    applyVersion
+                                        1
+                                        scriptBytes
+                            in  cageFlowSpec
+                                    path
+                                    applied
 
 -- ---------------------------------------------------------
 -- Test implementation
@@ -127,12 +150,30 @@ spec = describe "Cage E2E" $ do
 
 -- | Full cage flow: boot, request, update,
 -- and retract.
-cageFlowSpec :: ShortByteString -> Spec
-cageFlowSpec scriptBytes =
+cageFlowSpec
+    :: FilePath -> SBS.ShortByteString -> Spec
+cageFlowSpec bpPath scriptBytes =
     it "boot, request, update, retract"
         $ withE2E scriptBytes
-        $ \ctx -> do
-            let scriptAddr = cageAddr Testnet
+        $ \sock cfg ctx -> do
+            let scriptAddr =
+                    cageAddrFromCfg cfg Testnet
+
+            -- Debug: check initial genesis UTxOs
+            genesisUtxosBefore <-
+                queryUTxOs
+                    (provider ctx)
+                    genesisAddr
+            putStrLn
+                $ "Genesis UTxOs before boot: "
+                    <> show
+                        (length genesisUtxosBefore)
+            mapM_
+                ( \(tin, _) ->
+                    putStrLn
+                        $ "  " <> show tin
+                )
+                genesisUtxosBefore
 
             -- Step 1: Boot token
             unsignedBoot <-
@@ -143,16 +184,88 @@ cageFlowSpec scriptBytes =
                     addKeyWitness
                         genesisSignKey
                         unsignedBoot
+
+            -- Debug: print boot tx outputs
+            let bootOuts =
+                    signedBoot
+                        ^. bodyTxL
+                            . outputsTxBodyL
+            putStrLn
+                $ "Boot tx outputs ("
+                    <> show (length bootOuts)
+                    <> "):"
+            mapM_
+                ( \o ->
+                    putStrLn
+                        $ "  " <> show o
+                )
+                bootOuts
+
             bootResult <-
                 submitTx
                     (submitter ctx)
                     signedBoot
+            putStrLn
+                $ "Submit result: "
+                    <> show bootResult
             assertSubmitted bootResult
+            putStrLn
+                $ "Boot txId: "
+                    <> show (txIdTx signedBoot)
+            putStrLn
+                $ "Cage address: "
+                    <> show scriptAddr
             awaitTx
+            -- Read node log for submit events
+            let nodeLogPath =
+                    takeDirectory sock
+                        </> "node.log"
+            nodeLog <-
+                BS.readFile nodeLogPath
+            let logLines = BS8.lines nodeLog
+                submitLines =
+                    filter
+                        ( \l ->
+                            BS8.isInfixOf
+                                "Submit"
+                                l
+                                || BS8.isInfixOf
+                                    "Reject"
+                                    l
+                                || BS8.isInfixOf
+                                    "Received"
+                                    l
+                                || BS8.isInfixOf
+                                    "Mempool"
+                                    l
+                        )
+                        logLines
+            putStrLn
+                "=== Submit-related node log ==="
+            mapM_ BS8.putStrLn submitLines
+
+            -- Debug: check genesis UTxOs
+            genesisUtxosAfter <-
+                queryUTxOs
+                    (provider ctx)
+                    genesisAddr
+            putStrLn
+                $ "Genesis UTxOs after boot: "
+                    <> show
+                        (length genesisUtxosAfter)
+            mapM_
+                ( \(tin, tout) ->
+                    putStrLn
+                        $ "  "
+                            <> show tin
+                            <> " -> "
+                            <> show tout
+                )
+                genesisUtxosAfter
 
             -- Extract TokenId from mint field
             let tokenId =
-                    extractTokenId signedBoot
+                    extractTokenId cfg signedBoot
 
             -- Register in mock state + trie
             createTrie
@@ -172,9 +285,9 @@ cageFlowSpec scriptBytes =
                         , maxFee =
                             Coin 1_000_000
                         , processTime =
-                            300_000
+                            30_000
                         , retractTime =
-                            600_000
+                            30_000
                         }
             putToken
                 (tokens (state ctx))
@@ -186,6 +299,9 @@ cageFlowSpec scriptBytes =
                 queryUTxOs
                     (provider ctx)
                     scriptAddr
+            putStrLn
+                $ "Cage UTxOs: "
+                    <> show (length cageUtxos)
             cageUtxos
                 `shouldSatisfy` (not . null)
 
@@ -201,10 +317,25 @@ cageFlowSpec scriptBytes =
                     addKeyWitness
                         genesisSignKey
                         unsignedReq
+            -- Debug: print request tx
+            let reqBody = signedReq ^. bodyTxL
+            putStrLn
+                $ "Request tx inputs: "
+                    <> show
+                        (reqBody ^. inputsTxBodyL)
+            putStrLn
+                $ "Request tx outputs: "
+                    <> show
+                        ( reqBody
+                            ^. outputsTxBodyL
+                        )
             reqResult <-
                 submitTx
                     (submitter ctx)
                     signedReq
+            putStrLn
+                $ "Request submit: "
+                    <> show reqResult
             assertSubmitted reqResult
             awaitTx
 
@@ -226,6 +357,14 @@ cageFlowSpec scriptBytes =
                     addKeyWitness
                         genesisSignKey
                         unsignedUpdate
+            -- Dump for aiken simulate (before
+            -- submit so UTxOs still exist)
+            dumpTxForAiken
+                (provider ctx)
+                cfg
+                bpPath
+                "update"
+                signedUpdate
             updateResult <-
                 submitTx
                     (submitter ctx)
@@ -299,6 +438,10 @@ cageFlowSpec scriptBytes =
             length cageUtxos4
                 `shouldSatisfy` (> length cageUtxos3)
 
+            -- Wait for Phase 2 (process_time =
+            -- 30s after request submitted_at)
+            threadDelay 32_000_000
+
             -- Retract the second request
             unsignedRetract <-
                 retractRequest
@@ -330,11 +473,22 @@ cageFlowSpec scriptBytes =
 
 -- | Start a devnet node, wire a full 'Context IO',
 -- wait for N2C to connect, then run the action.
+-- Computes 'CageConfig' with the real system start.
 withE2E
-    :: ShortByteString
-    -> (Context IO -> IO a)
+    :: SBS.ShortByteString
+    -> ( FilePath
+         -> CageConfig
+         -> Context IO
+         -> IO a
+       )
     -> IO a
 withE2E scriptBytes action = do
+    -- Capture system start (devnet genesis =
+    -- now + 5s, see Devnet.startOffset)
+    now <- getPOSIXTime
+    let startMs =
+            floor ((now + 5) * 1000) :: Integer
+        cfg = cageCfg scriptBytes startMs
     gDir <- genesisDir
     withCardanoNode gDir $ \sock -> do
         let appCfg =
@@ -343,26 +497,13 @@ withE2E scriptBytes action = do
                         devnetMagic
                     , socketPath = sock
                     , channelCapacity = 16
-                    , cageConfig = cageCfg
+                    , cageConfig = cfg
                     }
         withApplication appCfg $ \ctx -> do
             _ <-
                 queryProtocolParams
                     (provider ctx)
-            action ctx
-  where
-    cageCfg =
-        CageConfig
-            { cageScriptBytes =
-                scriptBytes
-            , defaultProcessTime =
-                300_000
-            , defaultRetractTime =
-                600_000
-            , defaultMaxFee =
-                Coin 1_000_000
-            , network = Testnet
-            }
+            action sock cfg ctx
 
 -- ---------------------------------------------------------
 -- Helpers
@@ -377,16 +518,165 @@ assertSubmitted (Rejected reason) =
 
 -- | Extract the 'TokenId' from a boot
 -- transaction's mint field.
-extractTokenId :: Tx ConwayEra -> TokenId
-extractTokenId tx =
+extractTokenId
+    :: CageConfig -> Tx ConwayEra -> TokenId
+extractTokenId cfg tx =
     let MultiAsset ma =
             tx ^. bodyTxL . mintTxBodyL
         [(an, _)] =
             Map.toList
-                (ma Map.! cagePolicyId)
+                ( ma
+                    Map.! cagePolicyIdFromCfg cfg
+                )
     in  TokenId an
 
 -- | Wait for a transaction to be confirmed
--- (~20 devnet blocks at 0.1s slots).
+-- (~50 devnet blocks at 0.1s slots).
 awaitTx :: IO ()
-awaitTx = threadDelay 2_000_000
+awaitTx = threadDelay 5_000_000
+
+-- ---------------------------------------------------------
+-- Aiken debug dump
+-- ---------------------------------------------------------
+
+-- | Dump a signed transaction and its resolved
+-- inputs to files for @aiken tx simulate@.
+--
+-- Resolves all spent + reference inputs by
+-- querying wallet and cage addresses, then
+-- calls @aiken tx simulate@ with the correct
+-- slot configuration and blueprint.
+dumpTxForAiken
+    :: Provider IO
+    -> CageConfig
+    -> FilePath
+    -> String
+    -> Tx ConwayEra
+    -> IO ()
+dumpTxForAiken prov cfg bpPath label tx = do
+    let ver = eraProtVerLow @ConwayEra
+    -- 1. Collect all TxIns (spent + ref)
+    let spentIns =
+            Set.toAscList
+                ( tx
+                    ^. bodyTxL
+                        . inputsTxBodyL
+                )
+        refIns =
+            Set.toAscList
+                ( tx
+                    ^. bodyTxL
+                        . referenceInputsTxBodyL
+                )
+        allIns = spentIns <> refIns
+    -- 2. Resolve UTxOs from chain
+    let scriptAddr =
+            cageAddrFromCfg cfg (network cfg)
+    walletUtxos <-
+        queryUTxOs prov genesisAddr
+    cageUtxos <-
+        queryUTxOs prov scriptAddr
+    let utxoMap =
+            Map.fromList
+                (walletUtxos <> cageUtxos)
+        resolve tin =
+            case Map.lookup tin utxoMap of
+                Just out -> (tin, out)
+                Nothing ->
+                    error
+                        $ "dumpTxForAiken: \
+                          \unresolved "
+                            <> show tin
+        resolved = map resolve allIns
+        txIns :: [TxIn]
+        txIns = map fst resolved
+        txOuts :: [TxOut ConwayEra]
+        txOuts = map snd resolved
+    -- 3. Write CBOR hex files
+    let prefix =
+            "/tmp/aiken-" <> label
+    BS.writeFile
+        (prefix <> "-tx.hex")
+        $ toHex
+        $ BSL.toStrict
+        $ serialize ver tx
+    BS.writeFile
+        (prefix <> "-inputs.hex")
+        $ toHex
+        $ BSL.toStrict
+        $ serialize ver txIns
+    BS.writeFile
+        (prefix <> "-outputs.hex")
+        $ toHex
+        $ BSL.toStrict
+        $ serialize ver txOuts
+    -- 4. Run aiken tx simulate
+    putStrLn
+        $ "=== aiken simulate ("
+            <> label
+            <> ") ==="
+    (exitCode, stdout', stderr') <-
+        readProcessWithExitCode
+            "nix"
+            [ "develop"
+            , "path:/code/cardano-mpfs-onchain"
+            , "-c"
+            , "aiken"
+            , "tx"
+            , "simulate"
+            , prefix <> "-tx.hex"
+            , prefix <> "-inputs.hex"
+            , prefix <> "-outputs.hex"
+            , "--slot-length"
+            , show (slotLengthMs cfg)
+            , "--zero-time"
+            , show (systemStartPosixMs cfg)
+            , "--zero-slot"
+            , "0"
+            , "--blueprint"
+            , bpPath
+            ]
+            ""
+    putStrLn
+        $ "Exit: " <> show exitCode
+    putStrLn $ "Stdout:\n" <> stdout'
+    putStrLn $ "Stderr:\n" <> stderr'
+
+-- | Encode a 'ByteString' to hex.
+toHex :: BS.ByteString -> BS.ByteString
+toHex =
+    BS.concatMap
+        ( \w ->
+            BS.pack
+                [hexChar (w `div` 16), hexChar (w `mod` 16)]
+        )
+  where
+    hexChar :: Word8 -> Word8
+    hexChar n
+        | n < 10 =
+            n + fromIntegral (fromEnum '0')
+        | otherwise =
+            n
+                - 10
+                + fromIntegral (fromEnum 'a')
+
+-- ---------------------------------------------------------
+-- Config
+-- ---------------------------------------------------------
+
+-- | Build a 'CageConfig' from applied script bytes
+-- and the system start time.
+cageCfg
+    :: SBS.ShortByteString -> Integer -> CageConfig
+cageCfg scriptBytes startMs =
+    CageConfig
+        { cageScriptBytes = scriptBytes
+        , cfgScriptHash =
+            computeScriptHash scriptBytes
+        , defaultProcessTime = 30_000
+        , defaultRetractTime = 30_000
+        , defaultMaxFee = Coin 1_000_000
+        , network = Testnet
+        , systemStartPosixMs = startMs
+        , slotLengthMs = 100
+        }

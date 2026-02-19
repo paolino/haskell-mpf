@@ -34,6 +34,7 @@ module Cardano.MPFS.OnChain
 
       -- * Script identity
     , cageScriptHash
+    , cageScriptHashLedger
     , cagePolicyId
     , cageAddr
 
@@ -125,7 +126,7 @@ data OnChainRequest = OnChainRequest
     deriving stock (Show, Eq)
 
 -- | On-chain token state. Matches Aiken
--- @types/State@.
+-- @types/State@ (5 fields).
 data OnChainTokenState = OnChainTokenState
     { stateOwner :: !BuiltinByteString
     , stateRoot :: !OnChainRoot

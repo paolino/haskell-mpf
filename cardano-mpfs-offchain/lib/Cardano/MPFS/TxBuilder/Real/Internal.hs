@@ -9,6 +9,11 @@
 module Cardano.MPFS.TxBuilder.Real.Internal
     ( -- * Script construction
       mkCageScript
+    , computeScriptHash
+
+      -- * Derived identity
+    , cagePolicyIdFromCfg
+    , cageAddrFromCfg
 
       -- * Datum helpers
     , mkRequestDatum
@@ -20,6 +25,8 @@ module Cardano.MPFS.TxBuilder.Real.Internal
       -- * Reference conversion
     , txInToRef
     , addrKeyHashBytes
+    , addrFromKeyHashBytes
+    , addrWitnessKeyHash
 
       -- * UTxO lookup
     , findUtxoByTxIn
@@ -33,6 +40,12 @@ module Cardano.MPFS.TxBuilder.Real.Internal
     , defaultMintExUnits
     , defaultSpendExUnits
 
+      -- * Script integrity
+    , computeScriptIntegrity
+
+      -- * Slot conversion
+    , posixMsToSlot
+
       -- * Constants
     , emptyRoot
     ) where
@@ -45,11 +58,28 @@ import Data.Set qualified as Set
 import Data.Word (Word32)
 import Lens.Micro ((^.))
 
-import Cardano.Crypto.Hash (hashToBytes)
+import Data.Maybe.Strict
+    ( StrictMaybe (SJust)
+    )
+
+import Cardano.Crypto.Hash (hashFromBytes, hashToBytes)
 import Cardano.Ledger.Address (Addr (..))
+import Cardano.Ledger.Alonzo.PParams
+    ( LangDepView
+    , getLanguageView
+    )
 import Cardano.Ledger.Alonzo.Scripts
     ( fromPlutusScript
     , mkPlutusScript
+    )
+import Cardano.Ledger.Alonzo.Tx
+    ( ScriptIntegrity (..)
+    , ScriptIntegrityHash
+    , hashScriptIntegrity
+    )
+import Cardano.Ledger.Alonzo.TxWits
+    ( Redeemers
+    , TxDats (..)
     )
 import Cardano.Ledger.Api.Scripts.Data
     ( Data (..)
@@ -62,16 +92,29 @@ import Cardano.Ledger.Api.Tx.Out
     , datumTxOutL
     , valueTxOutL
     )
-import Cardano.Ledger.BaseTypes (TxIx (..))
+import Cardano.Ledger.BaseTypes
+    ( Network
+    , SlotNo (..)
+    , TxIx (..)
+    )
 import Cardano.Ledger.Core
     ( Script
     , extractHash
+    , hashScript
     )
-import Cardano.Ledger.Credential (Credential (..))
-import Cardano.Ledger.Keys (KeyHash (..))
+import Cardano.Ledger.Credential
+    ( Credential (..)
+    , StakeReference (..)
+    )
+import Cardano.Ledger.Hashes (ScriptHash)
+import Cardano.Ledger.Keys
+    ( KeyHash (..)
+    , KeyRole (..)
+    )
 import Cardano.Ledger.Mary.Value
     ( MaryValue (..)
     , MultiAsset (..)
+    , PolicyID (..)
     )
 import Cardano.Ledger.Plutus.ExUnits (ExUnits (..))
 import Cardano.Ledger.Plutus.Language
@@ -80,6 +123,7 @@ import Cardano.Ledger.Plutus.Language
     , PlutusBinary (..)
     )
 import Cardano.Ledger.TxIn (TxId (..), TxIn (..))
+import Data.Coerce (coerce)
 import PlutusCore.Data qualified as PLC
 import PlutusTx.Builtins.Internal
     ( BuiltinByteString (..)
@@ -96,7 +140,6 @@ import Cardano.MPFS.OnChain
     , OnChainRequest (..)
     , OnChainTokenId (..)
     , OnChainTxOutRef (..)
-    , cagePolicyId
     )
 import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
@@ -104,8 +147,19 @@ import Cardano.MPFS.TxBuilder.Config
 import Cardano.MPFS.Types
     ( AssetName (..)
     , ConwayEra
+    , PParams
     , TokenId (..)
     )
+
+-- | Convert POSIX time (ms) to an approximate
+-- 'SlotNo' using the config's system start and
+-- slot length. Clamps to 0 if the time is before
+-- system start.
+posixMsToSlot :: CageConfig -> Integer -> SlotNo
+posixMsToSlot cfg ms =
+    let elapsed = max 0 (ms - systemStartPosixMs cfg)
+        slot = elapsed `div` slotLengthMs cfg
+    in  SlotNo (fromIntegral slot)
 
 -- | Empty MPF root (32 zero bytes).
 emptyRoot :: ByteString
@@ -116,12 +170,12 @@ emptyRoot = BS.replicate 32 0
 -- values.
 defaultMintExUnits :: ExUnits
 defaultMintExUnits =
-    ExUnits 500_000_000 500_000
+    ExUnits 14_000_000 500_000_000
 
 -- | Hardcoded execution units for spending.
 defaultSpendExUnits :: ExUnits
 defaultSpendExUnits =
-    ExUnits 500_000_000 500_000
+    ExUnits 14_000_000 500_000_000
 
 -- | Build the cage 'Script' from config bytes.
 mkCageScript :: CageConfig -> Script ConwayEra
@@ -137,6 +191,37 @@ mkCageScript cfg =
                     "mkCageScript: invalid \
                     \PlutusV3 script"
 
+-- | Compute the 'ScriptHash' from raw script bytes.
+-- Use this when building a 'CageConfig' to fill
+-- the 'cfgScriptHash' field.
+computeScriptHash
+    :: SBS.ShortByteString -> ScriptHash
+computeScriptHash sbs =
+    let plutus =
+            Plutus @PlutusV3
+                $ PlutusBinary sbs
+    in  case mkPlutusScript @ConwayEra plutus of
+            Just ps ->
+                hashScript @ConwayEra
+                    $ fromPlutusScript ps
+            Nothing ->
+                error
+                    "computeScriptHash: invalid \
+                    \PlutusV3 script"
+
+-- | Compute the cage minting policy ID from config.
+cagePolicyIdFromCfg :: CageConfig -> PolicyID
+cagePolicyIdFromCfg =
+    PolicyID . cfgScriptHash
+
+-- | Compute the cage script address from config.
+cageAddrFromCfg :: CageConfig -> Network -> Addr
+cageAddrFromCfg cfg net =
+    Addr
+        net
+        (ScriptHashObj $ cfgScriptHash cfg)
+        StakeRefNull
+
 -- | Build a 'CageDatum' for a request.
 mkRequestDatum
     :: TokenId
@@ -144,8 +229,11 @@ mkRequestDatum
     -> ByteString
     -> OnChainOperation
     -> Integer
+    -- ^ Fee
+    -> Integer
+    -- ^ Submitted at (POSIXTime in ms)
     -> PLC.Data
-mkRequestDatum tid addr key op fee =
+mkRequestDatum tid addr key op fee submittedAt =
     let onChainTid =
             OnChainTokenId
                 $ BuiltinByteString
@@ -161,7 +249,7 @@ mkRequestDatum tid addr key op fee =
                 , requestKey = key
                 , requestValue = op
                 , requestFee = fee
-                , requestSubmittedAt = 0
+                , requestSubmittedAt = submittedAt
                 }
     in  toPlcData (RequestDatum datum)
 
@@ -205,6 +293,35 @@ addrKeyHashBytes
         hashToBytes h
 addrKeyHashBytes _ = BS.empty
 
+-- | Reconstruct an 'Addr' from raw payment key hash
+-- bytes.
+addrFromKeyHashBytes
+    :: Network -> ByteString -> Addr
+addrFromKeyHashBytes net bs =
+    case hashFromBytes bs of
+        Just h ->
+            Addr
+                net
+                (KeyHashObj (KeyHash h))
+                StakeRefNull
+        Nothing ->
+            error
+                "addrFromKeyHashBytes: \
+                \invalid hash"
+
+-- | Extract a 'KeyHash' ''Witness' from raw
+-- payment key hash bytes (for required signers).
+addrWitnessKeyHash
+    :: ByteString -> KeyHash 'Witness
+addrWitnessKeyHash bs =
+    case hashFromBytes bs of
+        Just h ->
+            coerce (KeyHash h :: KeyHash 'Payment)
+        Nothing ->
+            error
+                "addrWitnessKeyHash: \
+                \invalid hash"
+
 -- | Find a UTxO by its 'TxIn'.
 findUtxoByTxIn
     :: TxIn
@@ -222,16 +339,17 @@ findUtxoByTxIn needle =
 -- the 'MultiAsset' for the cage policy + token's
 -- asset name.
 findStateUtxo
-    :: TokenId
+    :: PolicyID
+    -> TokenId
     -> [(TxIn, TxOut ConwayEra)]
     -> Maybe (TxIn, TxOut ConwayEra)
-findStateUtxo tid = find' isState
+findStateUtxo policyId tid = find' isState
   where
     assetName = unTokenId tid
     isState (_, txOut) =
         case txOut ^. valueTxOutL of
             MaryValue _ (MultiAsset ma) ->
-                case Map.lookup cagePolicyId ma of
+                case Map.lookup policyId ma of
                     Just assets ->
                         Map.member assetName assets
                     Nothing -> False
@@ -285,3 +403,22 @@ spendingIndex needle inputs =
     go n (x : xs)
         | x == needle = n
         | otherwise = go (n + 1) xs
+
+-- | Compute the 'ScriptIntegrityHash' from the
+-- protocol params, redeemers, and languages used.
+computeScriptIntegrity
+    :: PParams ConwayEra
+    -> Redeemers ConwayEra
+    -> StrictMaybe ScriptIntegrityHash
+computeScriptIntegrity pp rdmrs =
+    let langViews :: Set.Set LangDepView
+        langViews =
+            Set.singleton
+                (getLanguageView pp PlutusV3)
+        emptyDats = TxDats mempty
+    in  SJust
+            $ hashScriptIntegrity
+            $ ScriptIntegrity
+                rdmrs
+                emptyDats
+                langViews

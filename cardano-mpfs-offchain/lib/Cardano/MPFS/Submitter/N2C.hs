@@ -21,9 +21,11 @@ import Cardano.Ledger.Api.Tx (Tx, txIdTx)
 import Ouroboros.Consensus.Cardano.Block
     ( pattern GenTxConway
     )
+import Ouroboros.Consensus.Cardano.CanHardFork ()
 import Ouroboros.Consensus.Shelley.Ledger.Mempool
     ( mkShelleyTx
     )
+import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 
 import Cardano.MPFS.NodeClient.LocalTxSubmission
     ( submitTxN2C
@@ -52,10 +54,10 @@ mkN2CSubmitter ch =
             pure $ case result of
                 Right () ->
                     Submitted (txIdTx tx)
-                Left _err ->
+                Left err ->
                     Rejected
                         ( B8.pack
-                            "transaction rejected by node"
+                            (show err)
                         )
         }
 

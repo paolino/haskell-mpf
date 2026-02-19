@@ -9,12 +9,20 @@ module Cardano.MPFS.TxBuilder.Real.Update
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Ord (Down (..))
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
 import Lens.Micro ((&), (.~), (^.))
 
 import Cardano.Ledger.Address (Addr)
+import Cardano.Ledger.Allegra.Scripts
+    ( ValidityInterval (..)
+    )
 import Cardano.Ledger.Alonzo.Scripts (AsIx (..))
+import Cardano.Ledger.Alonzo.TxBody
+    ( reqSignerHashesTxBodyL
+    , scriptIntegrityHashTxBodyL
+    )
 import Cardano.Ledger.Api.Tx
     ( Tx
     , mkBasicTx
@@ -25,9 +33,11 @@ import Cardano.Ledger.Api.Tx.Body
     , inputsTxBodyL
     , mkBasicTxBody
     , outputsTxBodyL
+    , vldtTxBodyL
     )
 import Cardano.Ledger.Api.Tx.Out
     ( TxOut
+    , coinTxOutL
     , datumTxOutL
     , mkBasicTxOut
     , valueTxOutL
@@ -37,11 +47,18 @@ import Cardano.Ledger.Api.Tx.Wits
     , rdmrsTxWitsL
     , scriptTxWitsL
     )
+import Cardano.Ledger.BaseTypes
+    ( Inject (..)
+    , StrictMaybe (SJust, SNothing)
+    )
 import Cardano.Ledger.Conway.Scripts
     ( ConwayPlutusPurpose (..)
     )
 import Cardano.Ledger.Core (hashScript)
 import Cardano.Ledger.TxIn (TxIn)
+import PlutusTx.Builtins.Internal
+    ( BuiltinByteString (..)
+    )
 
 import Cardano.MPFS.Balance (balanceTx)
 import Cardano.MPFS.OnChain
@@ -52,7 +69,6 @@ import Cardano.MPFS.OnChain
     , OnChainTokenState (..)
     , ProofStep
     , UpdateRedeemer (..)
-    , cageAddr
     )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.State (State (..))
@@ -65,7 +81,8 @@ import Cardano.MPFS.TxBuilder.Config
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
 import Cardano.MPFS.Types
-    ( ConwayEra
+    ( Coin (..)
+    , ConwayEra
     , Root (..)
     , TokenId
     )
@@ -85,10 +102,11 @@ updateTokenImpl
     -> IO (Tx ConwayEra)
 updateTokenImpl cfg prov _st tm tid addr = do
     -- 1. Query cage UTxOs
-    let scriptAddr = cageAddr (network cfg)
+    let scriptAddr = cageAddrFromCfg cfg (network cfg)
     cageUtxos <- queryUTxOs prov scriptAddr
     -- 2. Find state UTxO
-    stateUtxo <- case findStateUtxo tid cageUtxos of
+    let policyId = cagePolicyIdFromCfg cfg
+    stateUtxo <- case findStateUtxo policyId tid cageUtxos of
         Nothing ->
             error
                 "updateToken: state UTxO not found"
@@ -103,7 +121,9 @@ updateTokenImpl cfg prov _st tm tid addr = do
     -- 4. Get wallet UTxO for fees
     pp <- queryProtocolParams prov
     walletUtxos <- queryUTxOs prov addr
-    feeUtxo <- case walletUtxos of
+    feeUtxo <- case sortOn
+        (Down . (^. coinTxOutL) . snd)
+        walletUtxos of
         [] -> error "updateToken: no UTxOs"
         (u : _) -> pure u
     -- 5. Compute proofs and apply operations
@@ -118,6 +138,9 @@ updateTokenImpl cfg prov _st tm tid addr = do
             _ ->
                 error
                     "updateToken: invalid state datum"
+        OnChainTokenState
+            { stateOwner = BuiltinByteString ownerBs
+            } = oldState
         newStateDatum =
             StateDatum
                 oldState
@@ -131,7 +154,35 @@ updateTokenImpl cfg prov _st tm tid addr = do
                 & datumTxOutL
                     .~ mkInlineDatum
                         (toPlcData newStateDatum)
-    -- 8. Build redeemers
+    -- 8. Build refund outputs (one per request)
+    let mkRefund (_, reqOut) =
+            let Coin reqVal =
+                    reqOut ^. coinTxOutL
+                Coin mf = defaultMaxFee cfg
+                refundAddr =
+                    addrFromKeyHashBytes
+                        (network cfg)
+                        (extractOwnerBytes reqOut)
+            in  mkBasicTxOut
+                    refundAddr
+                    (inject (Coin (reqVal - mf)))
+        extractOwnerBytes out =
+            case extractCageDatum out of
+                Just (RequestDatum req) ->
+                    let OnChainRequest
+                            { requestOwner =
+                                BuiltinByteString bs
+                            } = req
+                    in  bs
+                _ ->
+                    error
+                        "extractOwnerBytes: \
+                        \not a request"
+        refundOuts = map mkRefund reqUtxos
+        allOuts =
+            StrictSeq.fromList
+                (newStateOut : refundOuts)
+    -- 9. Build redeemers
     let script = mkCageScript cfg
         scriptHash = hashScript script
         reqIns = map fst reqUtxos
@@ -170,16 +221,46 @@ updateTokenImpl cfg prov _st tm tid addr = do
                       )
                   )
                     : contributeEntries
+        integrity =
+            computeScriptIntegrity pp redeemers
+        ownerKh =
+            addrWitnessKeyHash ownerBs
+        -- Phase 1: upper bound must be before
+        -- the earliest submitted_at + process_time.
+        -- Extract submitted_at from each request
+        -- and take the minimum deadline.
+        extractSubmittedAt (_, rOut) =
+            case extractCageDatum rOut of
+                Just (RequestDatum r) ->
+                    requestSubmittedAt r
+                _ -> 0
+        earliestDeadline =
+            minimum
+                $ map
+                    ( \u ->
+                        extractSubmittedAt u
+                            + stateProcessTime oldState
+                    )
+                    reqUtxos
+        upperSlot =
+            posixMsToSlot cfg earliestDeadline
+        vldt =
+            ValidityInterval
+                SNothing
+                (SJust upperSlot)
         body =
             mkBasicTxBody
                 & inputsTxBodyL
                     .~ allScriptIns
-                & outputsTxBodyL
-                    .~ StrictSeq.singleton
-                        newStateOut
+                & outputsTxBodyL .~ allOuts
                 & collateralInputsTxBodyL
                     .~ Set.singleton
                         (fst feeUtxo)
+                & reqSignerHashesTxBodyL
+                    .~ Set.singleton ownerKh
+                & vldtTxBodyL .~ vldt
+                & scriptIntegrityHashTxBodyL
+                    .~ integrity
         tx =
             mkBasicTx body
                 & witsTxL . scriptTxWitsL
@@ -188,7 +269,11 @@ updateTokenImpl cfg prov _st tm tid addr = do
                         script
                 & witsTxL . rdmrsTxWitsL
                     .~ redeemers
-    case balanceTx pp feeUtxo addr tx of
+    case balanceTx
+        pp
+        (feeUtxo : stateUtxo : reqUtxos)
+        addr
+        tx of
         Left err ->
             error
                 $ "updateToken: " <> show err

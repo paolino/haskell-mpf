@@ -92,6 +92,7 @@ import Cardano.MPFS.OnChain
     , cageAddr
     , cagePolicyId
     , cageScriptHash
+    , cageScriptHashLedger
     )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.State
@@ -109,7 +110,8 @@ import Cardano.MPFS.Trie.PureManager
 import Cardano.MPFS.TxBuilder (TxBuilder (..))
 import Cardano.MPFS.TxBuilder.Config (CageConfig (..))
 import Cardano.MPFS.TxBuilder.Real
-    ( mkInlineDatum
+    ( computeScriptHash
+    , mkInlineDatum
     , mkRealTxBuilder
     , toPlcData
     )
@@ -157,10 +159,13 @@ testCageConfig :: CageConfig
 testCageConfig =
     CageConfig
         { cageScriptBytes = SBS.toShort "dummy"
+        , cfgScriptHash = cageScriptHashLedger
         , defaultProcessTime = 300_000
         , defaultRetractTime = 600_000
         , defaultMaxFee = Coin 1_000_000
         , network = Testnet
+        , systemStartPosixMs = 0
+        , slotLengthMs = 100
         }
 
 -- | Build a Provider that returns a fixed UTxO set
@@ -512,10 +517,14 @@ bootTokenWithScript scriptBytes = do
     let cfg =
             CageConfig
                 { cageScriptBytes = scriptBytes
+                , cfgScriptHash =
+                    computeScriptHash scriptBytes
                 , defaultProcessTime = 300_000
                 , defaultRetractTime = 600_000
                 , defaultMaxFee = Coin 1_000_000
                 , network = Testnet
+                , systemStartPosixMs = 0
+                , slotLengthMs = 100
                 }
 
     it "builds a balanced tx" $ do

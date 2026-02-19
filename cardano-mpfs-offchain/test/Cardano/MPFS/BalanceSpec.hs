@@ -106,7 +106,7 @@ propSucceeds =
                 result =
                     balanceTx
                         zeroPP
-                        (txIn, feeUtxo)
+                        [(txIn, feeUtxo)]
                         changeAddr
                         emptyTx
             in  case result of
@@ -129,7 +129,7 @@ propChangeCorrect =
                 result =
                     balanceTx
                         zeroPP
-                        (txIn, feeUtxo)
+                        [(txIn, feeUtxo)]
                         changeAddr
                         emptyTx
             in  case result of
@@ -170,7 +170,7 @@ propFeeSet =
                 result =
                     balanceTx
                         zeroPP
-                        (txIn, feeUtxo)
+                        [(txIn, feeUtxo)]
                         changeAddr
                         emptyTx
             in  case result of
@@ -198,7 +198,7 @@ propInsufficient =
                 result =
                     balanceTx
                         highFeePP
-                        (txIn, feeUtxo)
+                        [(txIn, feeUtxo)]
                         changeAddr
                         emptyTx
             in  case result of

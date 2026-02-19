@@ -255,11 +255,11 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1771492622,
-        "narHash": "sha256-vAfvFfcYajsxHYlAFOKyVIIRWWD8EMLBGAFLNyEeYSY=",
+        "lastModified": 1771498744,
+        "narHash": "sha256-jw+6fIYLgmSJiwDfy9FT1tQ7kmZju+133Avd4UauW6U=",
         "owner": "paolino",
         "repo": "cardano-mpfs-onchain",
-        "rev": "6a992157e7a238a2429f17574edecee929de41aa",
+        "rev": "50d8a99f687dceef807034789fe0607e78be3441",
         "type": "github"
       },
       "original": {
