@@ -611,23 +611,25 @@ dumpTxForAiken prov cfg bpPath label tx = do
         $ "=== aiken simulate ("
             <> label
             <> ") ==="
-    result <- try $ readProcessWithExitCode
-        "aiken"
-        [ "tx"
-        , "simulate"
-        , prefix <> "-tx.hex"
-        , prefix <> "-inputs.hex"
-        , prefix <> "-outputs.hex"
-        , "--slot-length"
-        , show (slotLengthMs cfg)
-        , "--zero-time"
-        , show (systemStartPosixMs cfg)
-        , "--zero-slot"
-        , "0"
-        , "--blueprint"
-        , bpPath
-        ]
-        ""
+    result <-
+        try
+            $ readProcessWithExitCode
+                "aiken"
+                [ "tx"
+                , "simulate"
+                , prefix <> "-tx.hex"
+                , prefix <> "-inputs.hex"
+                , prefix <> "-outputs.hex"
+                , "--slot-length"
+                , show (slotLengthMs cfg)
+                , "--zero-time"
+                , show (systemStartPosixMs cfg)
+                , "--zero-slot"
+                , "0"
+                , "--blueprint"
+                , bpPath
+                ]
+                ""
     case result of
         Left (e :: SomeException) ->
             putStrLn
