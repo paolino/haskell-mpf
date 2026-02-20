@@ -70,10 +70,10 @@ library
   exposed-modules:
     Cardano.MPFS.Application
     Cardano.MPFS.Balance
-    Cardano.MPFS.Indexer.CageEvent
     Cardano.MPFS.Blueprint
     Cardano.MPFS.Context
     Cardano.MPFS.Indexer
+    Cardano.MPFS.Indexer.CageEvent
     Cardano.MPFS.Indexer.Skeleton
     Cardano.MPFS.Mock.Context
     Cardano.MPFS.Mock.Indexer
