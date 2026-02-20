@@ -284,8 +284,8 @@ spec = describe "CageFollower" $ do
                     `shouldReturn` Nothing
 
     describe "extractConwayTxs" $ do
-        it "returns empty for non-Conway blocks"
-            $
+        it
+            "returns empty for non-Conway blocks"
             -- We can't easily construct a full Block in
             -- tests, so just verify the module compiles
             -- and exports are available. Real block

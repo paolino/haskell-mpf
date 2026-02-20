@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE LambdaCase #-}
 
 -- |
 -- Module      : Cardano.MPFS.Trie.Persistent
@@ -17,6 +18,7 @@ module Cardano.MPFS.Trie.Persistent
     ) where
 
 import Control.Lens (Prism')
+import Control.Monad (when)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as SBS
@@ -184,9 +186,8 @@ persistentCreateTrie
 persistentCreateTrie db nodesCF kvCF knownRef tid = do
     known <- readIORef knownRef
     -- Delete existing data if present
-    if Set.member tid known
-        then deleteAllWithPrefix db nodesCF kvCF pfx
-        else pure ()
+    when (Set.member tid known)
+        $ deleteAllWithPrefix db nodesCF kvCF pfx
     modifyIORef' knownRef (Set.insert tid)
   where
     pfx = tokenPrefix tid
@@ -272,7 +273,7 @@ mkPrefixedIterator db cf pfx = do
     i <- createIterator db (Just cf)
     pure
         QueryIterator
-            { step = \pos -> case pos of
+            { step = \case
                 PosFirst -> iterSeek i pfx
                 PosLast -> do
                     -- Seek past prefix range and step back

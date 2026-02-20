@@ -27,7 +27,7 @@ module Cardano.MPFS.Indexer.CageFollower
 
 import Control.Monad (void)
 import Data.ByteString (ByteString)
-import Data.Foldable (toList)
+import Data.Foldable (for_, toList)
 import Data.Maybe (catMaybes)
 import Data.Set qualified as Set
 import Lens.Micro ((^.))
@@ -97,13 +97,13 @@ processCageBlock
 processCageBlock scriptHash st tm resolveUtxo block = do
     let txs = extractConwayTxs block
     allEvents <-
-        fmap concat
-            $ traverse
+        concat
+            <$> traverse
                 (detectFromTx scriptHash resolveUtxo)
                 txs
     -- Process events sequentially:
     -- compute inverse THEN apply
-    fmap concat $ traverse (processEvent st tm) allEvents
+    concat <$> traverse (processEvent st tm) allEvents
 
 -- | Detect cage events from a single transaction.
 detectFromTx
@@ -166,8 +166,8 @@ computeInverse
                         [InvRestoreRoot tid (root ts)]
                     Nothing -> []
             restoreReqs <-
-                fmap concat
-                    $ traverse
+                concat
+                    <$> traverse
                         ( \txIn -> do
                             mReq <- getRequest txIn
                             pure $ case mReq of
@@ -214,10 +214,7 @@ applyCageEvent st tm = \case
                         getRequest
                             (requests st)
                             txIn
-                    case mReq of
-                        Just req ->
-                            applyRequestOp trie req
-                        Nothing -> pure ()
+                    for_ mReq (applyRequestOp trie)
                 )
                 consumed
         -- Remove consumed requests

@@ -179,7 +179,7 @@ detectCageEvents scriptHash resolvedInputs tx =
             [CageBurn (TokenId assetName)]
         | otherwise = []
 
-    findStateDatum outputs =
+    findStateDatum =
         foldr
             ( \txOut acc -> case acc of
                 Just _ -> acc
@@ -191,7 +191,6 @@ detectCageEvents scriptHash resolvedInputs tx =
                         _ -> Nothing
             )
             Nothing
-            outputs
 
     -- --------------------------------------------------
     -- Request detection (new outputs at cage addr)
@@ -282,7 +281,7 @@ detectCageEvents scriptHash resolvedInputs tx =
                         ]
                 Nothing -> []
 
-    findStateDatumWithToken outputs =
+    findStateDatumWithToken =
         foldr
             ( \txOut acc -> case acc of
                 Just _ -> acc
@@ -299,7 +298,6 @@ detectCageEvents scriptHash resolvedInputs tx =
                         _ -> Nothing
             )
             Nothing
-            outputs
 
     extractTokenId txOut ocs =
         let MaryValue _ (MultiAsset ma) =
