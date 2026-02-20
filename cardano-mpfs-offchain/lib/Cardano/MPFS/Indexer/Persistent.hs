@@ -31,8 +31,8 @@ import Database.KV.Transaction
     )
 
 import Cardano.MPFS.Indexer.Columns
-    ( CageCheckpoint (..)
-    , CageColumns (..)
+    ( AllColumns (..)
+    , CageCheckpoint (..)
     )
 import Cardano.MPFS.State
     ( Checkpoints (..)
@@ -46,7 +46,7 @@ import Cardano.MPFS.Types (Request (..))
 -- Each operation runs in its own serialized
 -- transaction via 'RunTransaction'.
 mkPersistentState
-    :: RunTransaction IO cf CageColumns op
+    :: RunTransaction IO cf AllColumns op
     -> State IO
 mkPersistentState rt =
     State
@@ -60,7 +60,7 @@ mkPersistentState rt =
 -- --------------------------------------------------------
 
 mkTokens
-    :: RunTransaction IO cf CageColumns op
+    :: RunTransaction IO cf AllColumns op
     -> Tokens IO
 mkTokens RunTransaction{runTransaction = run} =
     Tokens
@@ -90,7 +90,7 @@ mkTokens RunTransaction{runTransaction = run} =
 -- --------------------------------------------------------
 
 mkRequests
-    :: RunTransaction IO cf CageColumns op
+    :: RunTransaction IO cf AllColumns op
     -> Requests IO
 mkRequests RunTransaction{runTransaction = run} =
     Requests
@@ -126,7 +126,7 @@ mkRequests RunTransaction{runTransaction = run} =
 -- --------------------------------------------------------
 
 mkCheckpoints
-    :: RunTransaction IO cf CageColumns op
+    :: RunTransaction IO cf AllColumns op
     -> Checkpoints IO
 mkCheckpoints RunTransaction{runTransaction = run} =
     Checkpoints

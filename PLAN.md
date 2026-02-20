@@ -63,7 +63,7 @@ All three share a single multiplexed connection.
 
 ### 2. `cardano-mpfs-offchain` — Cardano integration ✓
 
-36 library modules, 8 unit test modules, 5 E2E test modules.
+41 library modules, 12 unit test modules, 5 E2E test modules.
 
 ## Interfaces (record of functions)
 
@@ -148,8 +148,8 @@ Checkpoints m = Checkpoints
     { getCheckpoint, putCheckpoint }
 ```
 
-Implementation: `Mock.State` (TVar-backed). Persistent
-backend needed for production.
+Implementation: `Mock.State` (IORef-backed) for testing.
+`Indexer.Persistent` (RocksDB) for production.
 
 ### TrieManager — per-token MPF tries ✓
 
@@ -165,8 +165,9 @@ Trie m = Trie
     , getProof, getProofSteps }
 ```
 
-Implementation: `Trie.PureManager` (in-memory). RocksDB
-backend available from `merkle-patricia-forestry`.
+Implementation: `Trie.PureManager` (in-memory) for testing.
+`Trie.Persistent` (RocksDB with token-prefixed keys) for
+production.
 
 ### Indexer — chain follower
 
@@ -177,8 +178,9 @@ Indexer m = Indexer
     }
 ```
 
-Implementation: `Indexer.Skeleton` (framework only).
-ChainSync block processing not yet wired.
+Implementation: `Indexer.Skeleton` (lifecycle only).
+`Indexer.CageFollower` (block processing, event detection,
+trie mutations, rollback via inverse operations).
 
 ## Key domain types
 
@@ -271,7 +273,7 @@ graph LR
     P1["Phase 1 ✓\nInterfaces +\nNode Client"]
     P2["Phase 2 ✓\nTx Builders +\nBalance"]
     P3["Phase 3 ✓\nE2E Tests"]
-    P4["Phase 4\nIndexer +\nPersistence"]
+    P4["Phase 4 ✓\nIndexer +\nPersistence"]
     P5["Phase 5\nHTTP Service"]
     P6["Phase 6\nDeployment"]
 
@@ -281,6 +283,7 @@ graph LR
     style P1 fill:#2d6,color:#fff
     style P2 fill:#2d6,color:#fff
     style P3 fill:#2d6,color:#fff
+    style P4 fill:#2d6,color:#fff
 ```
 
 ### Phase 0 — MPF Library ✓
@@ -329,14 +332,20 @@ graph LR
 - Optional aiken simulate integration
 - CI job running E2E on GitHub Actions
 
-### Phase 4 — Indexer + Persistence (next)
+### Phase 4 — Indexer + Persistence ✓
 
-- Wire `Indexer.Skeleton` to real ChainSync
-- Block processing: detect cage transactions, update
-  `State` and `TrieManager` automatically
-- Persistent `State` backend (RocksDB or LevelDB)
-- Persistent `TrieManager` backend (RocksDB)
-- Rollback handling via checkpoints
+- `AllColumns` GADT with cage + trie column families
+- CBOR codecs for all column key-value types
+- Persistent `State` backend (`Indexer.Persistent`)
+- Persistent `TrieManager` backend (`Trie.Persistent`)
+  with token-prefixed keys for per-token isolation
+- Cage event detection from transactions
+  (`Indexer.CageEvent.detectCageEvents`)
+- Block processor (`Indexer.CageFollower`) with event
+  application, trie mutations, and inverse operations
+  for rollback
+- Application wiring with shared RocksDB instance
+- 197 unit tests (14 CageFollower, 27 persistent trie)
 
 ### Phase 5 — HTTP Service
 

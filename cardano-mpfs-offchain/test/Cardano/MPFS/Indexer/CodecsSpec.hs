@@ -12,7 +12,14 @@ import Data.ByteString qualified as BS
 
 import Test.Hspec (Spec, describe)
 import Test.Hspec.QuickCheck (prop)
-import Test.QuickCheck (forAll, (=/=), (===), (==>))
+import Test.QuickCheck
+    ( choose
+    , forAll
+    , vectorOf
+    , (=/=)
+    , (===)
+    , (==>)
+    )
 
 import Cardano.MPFS.Generators
     ( genBlockId
@@ -24,6 +31,7 @@ import Cardano.MPFS.Generators
     )
 import Cardano.MPFS.Indexer.Codecs
     ( checkpointPrism
+    , rawBytesPrism
     , requestPrism
     , tokenIdPrism
     , tokenStatePrism
@@ -87,6 +95,14 @@ spec = describe "Codecs" $ do
                             (review checkpointPrism cp)
                             === Just cp
 
+        prop "rawBytesPrism"
+            $ forAll genBytes
+            $ \bs ->
+                preview
+                    rawBytesPrism
+                    (review rawBytesPrism bs)
+                    === Just bs
+
     -- -------------------------------------------
     -- Injectivity (Lean: roundTrip_implies_injective)
     -- -------------------------------------------
@@ -143,3 +159,7 @@ spec = describe "Codecs" $ do
                                 (CageCheckpoint s b)
                             )
                         )
+  where
+    genBytes = do
+        len <- choose (0 :: Int, 64)
+        BS.pack <$> vectorOf len (choose (0, 255))

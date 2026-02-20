@@ -4,20 +4,24 @@
 
 -- |
 -- Module      : Cardano.MPFS.Indexer.Columns
--- Description : Column family GADT for cage persistent state
+-- Description : Column family GADT for indexer persistent state
 -- License     : Apache-2.0
 --
--- Type-safe column family definitions for the cage
+-- Type-safe column family definitions for the
 -- indexer's RocksDB-backed persistent state. Each
 -- constructor selects a column with its key-value
--- types enforced at the type level.
+-- types enforced at the type level. Covers cage
+-- state (tokens, requests, checkpoint) and trie
+-- storage (nodes, key-value pairs).
 module Cardano.MPFS.Indexer.Columns
     ( -- * Column selector
-      CageColumns (..)
+      AllColumns (..)
 
       -- * Checkpoint type
     , CageCheckpoint (..)
     ) where
+
+import Data.ByteString (ByteString)
 
 import Control.Lens (type (:~:) (..))
 import Database.KV.Transaction
@@ -46,34 +50,52 @@ data CageCheckpoint = CageCheckpoint
     }
     deriving stock (Eq, Show)
 
--- | Column family selector for cage persistent
--- state. Each constructor identifies a column and
--- encodes its key-value types.
-data CageColumns x where
+-- | Column family selector for indexer persistent
+-- state. Covers cage state and per-token trie
+-- storage. UTxO columns (from cardano-utxo-csmt)
+-- will be added when integrating the Follower.
+data AllColumns x where
     -- | Token state: maps token identifiers to
     -- their on-chain state.
     CageTokens
-        :: CageColumns (KV TokenId TokenState)
+        :: AllColumns (KV TokenId TokenState)
     -- | Pending requests: maps UTxO references to
     -- request details.
     CageRequests
-        :: CageColumns (KV TxIn Request)
+        :: AllColumns (KV TxIn Request)
     -- | Singleton checkpoint: stores the last
     -- processed block position.
     CageCfg
-        :: CageColumns (KV () CageCheckpoint)
+        :: AllColumns (KV () CageCheckpoint)
+    -- | Trie nodes: MPF trie structure. Keys are
+    -- token-prefixed serialized 'HexKey', values
+    -- are serialized 'HexIndirect'.
+    TrieNodes
+        :: AllColumns (KV ByteString ByteString)
+    -- | Trie key-value pairs: user data stored in
+    -- per-token tries. Keys are token-prefixed.
+    TrieKV
+        :: AllColumns (KV ByteString ByteString)
 
-instance GEq CageColumns where
+instance GEq AllColumns where
     geq CageTokens CageTokens = Just Refl
     geq CageRequests CageRequests = Just Refl
     geq CageCfg CageCfg = Just Refl
+    geq TrieNodes TrieNodes = Just Refl
+    geq TrieKV TrieKV = Just Refl
     geq _ _ = Nothing
 
-instance GCompare CageColumns where
+instance GCompare AllColumns where
     gcompare CageTokens CageTokens = GEQ
     gcompare CageTokens _ = GLT
     gcompare _ CageTokens = GGT
     gcompare CageRequests CageRequests = GEQ
-    gcompare CageRequests CageCfg = GLT
-    gcompare CageCfg CageRequests = GGT
+    gcompare CageRequests _ = GLT
+    gcompare _ CageRequests = GGT
     gcompare CageCfg CageCfg = GEQ
+    gcompare CageCfg _ = GLT
+    gcompare _ CageCfg = GGT
+    gcompare TrieNodes TrieNodes = GEQ
+    gcompare TrieNodes TrieKV = GLT
+    gcompare TrieKV TrieNodes = GGT
+    gcompare TrieKV TrieKV = GEQ
