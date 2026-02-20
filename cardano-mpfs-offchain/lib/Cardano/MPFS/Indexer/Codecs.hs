@@ -6,19 +6,20 @@
 
 -- |
 -- Module      : Cardano.MPFS.Indexer.Codecs
--- Description : CBOR serialization codecs for cage columns
+-- Description : CBOR serialization codecs for indexer columns
 -- License     : Apache-2.0
 --
 -- Provides 'Prism''-based codecs for encoding and
--- decoding cage column keys and values to/from
+-- decoding indexer column keys and values to/from
 -- 'ByteString'. Uses CBOR via @cborg@ for
 -- structured types. Ledger types ('TxIn', 'Coin',
 -- 'KeyHash') are serialized to bytes via
 -- @cardano-ledger-binary@ and embedded as CBOR
--- byte strings.
+-- byte strings. Trie columns use identity codecs
+-- (raw 'ByteString' passthrough).
 module Cardano.MPFS.Indexer.Codecs
     ( -- * Column codecs
-      cageCodecs
+      allCodecs
 
       -- * Individual prisms
     , tokenIdPrism
@@ -27,6 +28,7 @@ module Cardano.MPFS.Indexer.Codecs
     , requestPrism
     , unitPrism
     , checkpointPrism
+    , rawBytesPrism
     ) where
 
 import Cardano.Ledger.Binary
@@ -67,8 +69,8 @@ import Database.KV.Transaction
     )
 
 import Cardano.MPFS.Indexer.Columns
-    ( CageCheckpoint (..)
-    , CageColumns (..)
+    ( AllColumns (..)
+    , CageCheckpoint (..)
     )
 import Cardano.MPFS.Types
     ( BlockId (..)
@@ -80,9 +82,9 @@ import Cardano.MPFS.Types
     , TxIn
     )
 
--- | Codecs for all cage column families.
-cageCodecs :: DMap CageColumns Codecs
-cageCodecs =
+-- | Codecs for all indexer column families.
+allCodecs :: DMap AllColumns Codecs
+allCodecs =
     fromPairList
         [ CageTokens
             :=> Codecs
@@ -98,6 +100,16 @@ cageCodecs =
             :=> Codecs
                 { keyCodec = unitPrism
                 , valueCodec = checkpointPrism
+                }
+        , TrieNodes
+            :=> Codecs
+                { keyCodec = rawBytesPrism
+                , valueCodec = rawBytesPrism
+                }
+        , TrieKV
+            :=> Codecs
+                { keyCodec = rawBytesPrism
+                , valueCodec = rawBytesPrism
                 }
         ]
 
@@ -214,6 +226,12 @@ checkpointPrism = prism' enc dec
                 { checkpointSlot = s
                 , checkpointBlockId = b
                 }
+
+-- | Identity prism for raw 'ByteString' columns
+-- (trie nodes and key-value pairs). No encoding or
+-- decoding — bytes pass through unchanged.
+rawBytesPrism :: Prism' ByteString ByteString
+rawBytesPrism = prism' id Just
 
 -- --------------------------------------------------------
 -- Ledger serialization bridge

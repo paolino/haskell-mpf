@@ -63,6 +63,8 @@ library
     , plutus-core
     , plutus-ledger-api
     , plutus-tx
+    , rocksdb-haskell-jprupp
+    , rocksdb-kv-transactions
     , rocksdb-kv-transactions:kv-transactions
     , serialise
     , stm
@@ -77,6 +79,7 @@ library
     Cardano.MPFS.Context
     Cardano.MPFS.Indexer
     Cardano.MPFS.Indexer.CageEvent
+    Cardano.MPFS.Indexer.CageFollower
     Cardano.MPFS.Indexer.Codecs
     Cardano.MPFS.Indexer.Columns
     Cardano.MPFS.Indexer.Persistent
@@ -100,6 +103,7 @@ library
     Cardano.MPFS.Submitter
     Cardano.MPFS.Submitter.N2C
     Cardano.MPFS.Trie
+    Cardano.MPFS.Trie.Persistent
     Cardano.MPFS.Trie.Pure
     Cardano.MPFS.Trie.PureManager
     Cardano.MPFS.TxBuilder
@@ -135,17 +139,21 @@ test-suite unit-tests
     , plutus-core
     , plutus-tx
     , QuickCheck                             >=2.14 && <2.18
+    , rocksdb-haskell-jprupp
+    , temporary
     , text
 
   other-modules:
     Cardano.MPFS.BalanceSpec
     Cardano.MPFS.Generators
     Cardano.MPFS.Indexer.CageEventSpec
+    Cardano.MPFS.Indexer.CageFollowerSpec
     Cardano.MPFS.Indexer.CodecsSpec
     Cardano.MPFS.Indexer.InverseSpec
     Cardano.MPFS.OnChainSpec
     Cardano.MPFS.ProofSpec
     Cardano.MPFS.StateSpec
+    Cardano.MPFS.Trie.PersistentSpec
     Cardano.MPFS.TrieManagerSpec
     Cardano.MPFS.TrieSpec
     Cardano.MPFS.TxBuilderSpec

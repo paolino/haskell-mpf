@@ -8,7 +8,7 @@
 --
 -- Extracts cage-protocol events (boot, request, update,
 -- retract, burn) from Cardano transactions by inspecting
--- mints, outputs, and spent inputs at the cage script
+-- mints, outputs, and redeemers at the cage script
 -- address and policy ID.
 module Cardano.MPFS.Indexer.CageEvent
     ( -- * Event type
@@ -19,18 +19,27 @@ module Cardano.MPFS.Indexer.CageEvent
 
       -- * Detection
     , detectCageEvents
-    , detectFromTx
     , inversesOf
-
-      -- * Event application
-    , applyCageEvent
     ) where
 
-import Cardano.Crypto.Hash (hashFromBytes)
+import Data.ByteString.Short qualified as SBS
+import Data.Foldable (toList)
+import Data.Map.Strict qualified as Map
+import Data.Word (Word16, Word32)
+import Lens.Micro ((^.))
+
+import Cardano.Ledger.Address (Addr (..))
+import Cardano.Ledger.Alonzo.Scripts (AsIx (..))
+import Cardano.Ledger.Api.Scripts.Data
+    ( Data (..)
+    , Datum (..)
+    , binaryDataToData
+    )
 import Cardano.Ledger.Api.Tx
     ( Tx
     , bodyTxL
     , txIdTx
+    , witsTxL
     )
 import Cardano.Ledger.Api.Tx.Body
     ( inputsTxBodyL
@@ -38,28 +47,44 @@ import Cardano.Ledger.Api.Tx.Body
     , outputsTxBodyL
     )
 import Cardano.Ledger.Api.Tx.Out
-    ( TxOut
+    ( addrTxOutL
+    , datumTxOutL
     , valueTxOutL
     )
+import Cardano.Ledger.Api.Tx.Wits
+    ( Redeemers (..)
+    , rdmrsTxWitsL
+    )
 import Cardano.Ledger.BaseTypes (TxIx (..))
+import Cardano.Ledger.Conway.Scripts
+    ( ConwayPlutusPurpose (..)
+    )
+import Cardano.Ledger.Credential
+    ( Credential (..)
+    )
 import Cardano.Ledger.Hashes (ScriptHash)
-import Cardano.Ledger.Keys (KeyHash (..))
 import Cardano.Ledger.Mary.Value
     ( MaryValue (..)
     , MultiAsset (..)
+    , PolicyID (..)
     )
-import Cardano.Ledger.TxIn (TxId, TxIn (..))
-import Data.ByteString.Short qualified as SBS
-import Data.Foldable (toList)
-import Data.Map.Strict qualified as Map
-import Data.Maybe (mapMaybe)
+import Cardano.Ledger.TxIn
+    ( TxIn (..)
+    )
 import Data.Set qualified as Set
-import Data.Word (Word16)
-import Lens.Micro ((^.))
 import PlutusTx.Builtins.Internal
     ( BuiltinByteString (..)
+    , BuiltinData (..)
+    )
+import PlutusTx.IsData.Class
+    ( FromData (..)
     )
 
+import Cardano.Crypto.Hash (hashFromBytes)
+import Cardano.Ledger.Keys
+    ( KeyHash (..)
+    , KeyRole (..)
+    )
 import Cardano.MPFS.OnChain
     ( CageDatum (..)
     , OnChainOperation (..)
@@ -67,29 +92,21 @@ import Cardano.MPFS.OnChain
     , OnChainRoot (..)
     , OnChainTokenId (..)
     , OnChainTokenState (..)
-    )
-import Cardano.MPFS.State
-    ( Requests (..)
-    , State (..)
-    , Tokens (..)
-    )
-import Cardano.MPFS.Trie (TrieManager (..))
-import Cardano.MPFS.TxBuilder.Real.Internal
-    ( extractCageDatum
+    , UpdateRedeemer (..)
     )
 import Cardano.MPFS.Types
     ( AssetName (..)
     , Coin (..)
     , ConwayEra
     , Operation (..)
-    , PolicyID (..)
     , Request (..)
     , Root (..)
     , TokenId (..)
     , TokenState (..)
+    , TxOut
     )
 
--- | A cage-protocol event detected in a block.
+-- | A cage-protocol event detected in a transaction.
 data CageEvent
     = -- | Mint with cage policyId: new token created
       CageBoot !TokenId !TokenState
@@ -117,306 +134,206 @@ data CageInverseOp
       InvRestoreRoot !TokenId !Root
     deriving stock (Eq, Show)
 
--- | Detect cage events from a block (stub).
-detectCageEvents :: () -> [CageEvent]
-detectCageEvents _ = []
-
--- | Detect cage events from a single transaction.
+-- | Detect cage events from a transaction.
 --
--- Inspects mints (boot\/burn), outputs to cage
--- address (request), and spent inputs at the cage
--- address (update\/retract).
-detectFromTx
-    :: PolicyID
-    -- ^ Cage minting policy ID
-    -> ScriptHash
-    -- ^ Cage script hash (reserved)
-    -> (TxIn -> Maybe (TxOut ConwayEra))
-    -- ^ Resolve spent inputs to their outputs
+-- Inspects mints (boot\/burn), outputs (request),
+-- and spending redeemers (update\/retract).
+detectCageEvents
+    :: ScriptHash
+    -- ^ Cage script hash
+    -> [(TxIn, TxOut ConwayEra)]
+    -- ^ Resolved inputs (UTxOs being spent)
     -> Tx ConwayEra
     -> [CageEvent]
-detectFromTx pid _sh resolver tx =
-    detectMints pid tx
-        ++ detectRequests tx
-        ++ detectSpends pid resolver tx
-
--- ---------------------------------------------------------
--- Mint detection (boot / burn)
--- ---------------------------------------------------------
-
--- | Detect boot and burn events from the mint field.
-detectMints
-    :: PolicyID -> Tx ConwayEra -> [CageEvent]
-detectMints pid tx =
-    let MultiAsset ma = tx ^. bodyTxL . mintTxBodyL
-    in  case Map.lookup pid ma of
-            Nothing -> []
-            Just assets ->
-                concatMap (detectMint tx)
-                    $ Map.toList assets
-
--- | Classify a single minted asset as boot or burn.
-detectMint
-    :: Tx ConwayEra
-    -> (AssetName, Integer)
-    -> [CageEvent]
-detectMint tx (an, qty)
-    | qty > 0 =
-        let tid = TokenId an
-            outs =
-                toList
-                    (tx ^. bodyTxL . outputsTxBodyL)
-            mState = findStateDatumInOuts outs
-        in  case mState of
-                Just ts -> [CageBoot tid ts]
-                Nothing -> []
-    | qty < 0 =
-        [CageBurn (TokenId an)]
-    | otherwise = []
-
--- | Find a 'StateDatum' in outputs and convert.
-findStateDatumInOuts
-    :: [TxOut ConwayEra] -> Maybe TokenState
-findStateDatumInOuts [] = Nothing
-findStateDatumInOuts (out : rest) =
-    case extractCageDatum out of
-        Just (StateDatum s) ->
-            Just (onChainToTokenState s)
-        _ -> findStateDatumInOuts rest
-
--- ---------------------------------------------------------
--- Request detection (outputs with RequestDatum)
--- ---------------------------------------------------------
-
--- | Detect request events from outputs that carry a
--- 'RequestDatum'.
-detectRequests :: Tx ConwayEra -> [CageEvent]
-detectRequests tx =
-    let txid = txIdTx tx
-        outs =
-            zip [0 :: Word16 ..]
-                $ toList
-                    (tx ^. bodyTxL . outputsTxBodyL)
-    in  mapMaybe (detectRequest txid) outs
-
--- | Check if an output is a cage request.
-detectRequest
-    :: TxId
-    -> (Word16, TxOut ConwayEra)
-    -> Maybe CageEvent
-detectRequest txid (ix, out) =
-    case extractCageDatum out of
-        Just (RequestDatum r) ->
-            let txIn =
-                    TxIn
-                        txid
-                        (TxIx (fromIntegral ix))
-                req = onChainToRequest r
-            in  Just (CageRequest txIn req)
-        _ -> Nothing
-
--- ---------------------------------------------------------
--- Spend detection (update / retract)
--- ---------------------------------------------------------
-
--- | Detect update and retract events from spent
--- inputs.
-detectSpends
-    :: PolicyID
-    -> (TxIn -> Maybe (TxOut ConwayEra))
-    -> Tx ConwayEra
-    -> [CageEvent]
-detectSpends pid resolver tx =
-    let spentIns =
-            Set.toList
-                (tx ^. bodyTxL . inputsTxBodyL)
-        resolved =
-            mapMaybe
-                ( \tin -> case resolver tin of
-                    Just out -> Just (tin, out)
-                    Nothing -> Nothing
-                )
-                spentIns
-        stateSpends =
-            filter (hasCageToken pid . snd) resolved
-        requestSpends =
-            filter
-                ( \(_, out) ->
-                    isRequestDatum out
-                        && not (hasCageToken pid out)
-                )
-                resolved
-    in  case stateSpends of
-            [(_, stateOut)] ->
-                let tid =
-                        extractTokenIdFromOut
-                            pid
-                            stateOut
-                    newRoot = extractNewRoot tx
-                    consumedReqs =
-                        map fst requestSpends
-                in  [ CageUpdate
-                        tid
-                        newRoot
-                        consumedReqs
-                    ]
-            _ ->
-                map (CageRetract . fst) requestSpends
-
--- ---------------------------------------------------------
--- Conversion helpers
--- ---------------------------------------------------------
-
--- | Check if a 'TxOut' carries the cage token.
-hasCageToken :: PolicyID -> TxOut ConwayEra -> Bool
-hasCageToken pid out =
-    case out ^. valueTxOutL of
-        MaryValue _ (MultiAsset ma) ->
-            case Map.lookup pid ma of
-                Just assets ->
-                    not (Map.null assets)
-                Nothing -> False
-
--- | Check if a 'TxOut' has a 'RequestDatum'.
-isRequestDatum :: TxOut ConwayEra -> Bool
-isRequestDatum out =
-    case extractCageDatum out of
-        Just (RequestDatum _) -> True
-        _ -> False
-
--- | Extract the 'TokenId' from a state UTxO.
-extractTokenIdFromOut
-    :: PolicyID -> TxOut ConwayEra -> TokenId
-extractTokenIdFromOut pid out =
-    case out ^. valueTxOutL of
-        MaryValue _ (MultiAsset ma) ->
-            case Map.lookup pid ma of
-                Just assets ->
-                    case Map.keys assets of
-                        [an] -> TokenId an
-                        _ ->
-                            error
-                                "extractTokenIdFromOut:\
-                                \ expected 1 asset"
-                Nothing ->
-                    error
-                        "extractTokenIdFromOut:\
-                        \ no cage policy"
-
--- | Extract the new root from the first StateDatum
--- output.
-extractNewRoot :: Tx ConwayEra -> Root
-extractNewRoot tx =
-    let outs =
-            toList
-                (tx ^. bodyTxL . outputsTxBodyL)
-    in  go outs
+detectCageEvents scriptHash resolvedInputs tx =
+    mintEvents ++ requestEvents ++ spendEvents
   where
-    go [] =
-        error
-            "extractNewRoot: no StateDatum output"
-    go (out : rest) =
-        case extractCageDatum out of
-            Just (StateDatum s) ->
-                Root
-                    (unOnChainRoot (stateRoot s))
-            _ -> go rest
+    body = tx ^. bodyTxL
+    policyId = PolicyID scriptHash
 
--- | Convert on-chain token state to domain type.
-onChainToTokenState
-    :: OnChainTokenState -> TokenState
-onChainToTokenState
-    OnChainTokenState
-        { stateOwner = BuiltinByteString ownerBs
-        , stateRoot = r
-        , stateMaxFee = mf
-        , stateProcessTime = pt
-        , stateRetractTime = rt
-        } =
-        let kh = case hashFromBytes ownerBs of
-                Just h -> KeyHash h
+    -- --------------------------------------------------
+    -- Mint / Burn detection
+    -- --------------------------------------------------
+
+    mintEvents =
+        let MultiAsset ma = body ^. mintTxBodyL
+        in  case Map.lookup policyId ma of
+                Nothing -> []
+                Just assets ->
+                    concatMap
+                        (uncurry detectMint)
+                        (Map.toList assets)
+
+    detectMint assetName qty
+        | qty == 1 =
+            -- Boot: find StateDatum in outputs
+            let tid = TokenId assetName
+                outputs =
+                    toList
+                        (body ^. outputsTxBodyL)
+                mState = findStateDatum outputs
+            in  case mState of
+                    Just ts -> [CageBoot tid ts]
+                    Nothing -> []
+        | qty == -1 =
+            [CageBurn (TokenId assetName)]
+        | otherwise = []
+
+    findStateDatum outputs =
+        foldr
+            ( \txOut acc -> case acc of
+                Just _ -> acc
                 Nothing ->
-                    error
-                        "onChainToTokenState: \
-                        \invalid owner hash"
-        in  TokenState
-                { owner = kh
-                , root =
-                    Root (unOnChainRoot r)
-                , maxFee = Coin mf
-                , processTime = pt
-                , retractTime = rt
-                }
+                    case extractDatum txOut of
+                        Just (StateDatum ocs) ->
+                            Just
+                                (fromOnChainState ocs)
+                        _ -> Nothing
+            )
+            Nothing
+            outputs
 
--- | Convert on-chain request to domain type.
-onChainToRequest :: OnChainRequest -> Request
-onChainToRequest
-    OnChainRequest
-        { requestToken =
-            OnChainTokenId
-                (BuiltinByteString tidBs)
-        , requestOwner =
-            BuiltinByteString ownerBs
-        , requestKey = rKey
-        , requestValue = rVal
-        , requestFee = rFee
-        , requestSubmittedAt = rSub
-        } =
-        let kh = case hashFromBytes ownerBs of
-                Just h -> KeyHash h
+    -- --------------------------------------------------
+    -- Request detection (new outputs at cage addr)
+    -- --------------------------------------------------
+
+    requestEvents =
+        let outputs =
+                toList
+                    (body ^. outputsTxBodyL)
+            thisTxId = txIdTx tx
+        in  concatMap
+                (uncurry (detectRequest thisTxId))
+                (zip [0 ..] outputs)
+
+    detectRequest txId (ix :: Word16) txOut =
+        case txOut ^. addrTxOutL of
+            addr@(Addr _ (ScriptHashObj sh) _)
+                | sh == scriptHash ->
+                    case extractDatum txOut of
+                        Just (RequestDatum ocReq) ->
+                            let txIn =
+                                    TxIn
+                                        txId
+                                        (TxIx ix)
+                                req =
+                                    fromOnChainReq
+                                        addr
+                                        ocReq
+                            in  [CageRequest txIn req]
+                        _ -> []
+            _ -> []
+
+    -- --------------------------------------------------
+    -- Spend detection (Update / Retract)
+    -- --------------------------------------------------
+
+    spendEvents =
+        let allInputs = body ^. inputsTxBodyL
+            Redeemers rdmrs =
+                tx ^. witsTxL . rdmrsTxWitsL
+        in  concatMap
+                (detectSpend allInputs rdmrs)
+                resolvedInputs
+
+    detectSpend allInputs rdmrs (txIn, txOut) =
+        case txOut ^. addrTxOutL of
+            Addr _ (ScriptHashObj sh) _
+                | sh == scriptHash ->
+                    let ix =
+                            spendingIndex
+                                txIn
+                                allInputs
+                        purpose =
+                            ConwaySpending (AsIx ix)
+                    in  case Map.lookup purpose rdmrs of
+                            Just (redeemerData, _) ->
+                                decodeSpend
+                                    txIn
+                                    txOut
+                                    redeemerData
+                            Nothing -> []
+            _ -> []
+
+    decodeSpend txIn txOut redeemerData =
+        let Data plcData = redeemerData
+        in  case fromBuiltinData
+                (BuiltinData plcData) of
+                Just (Modify _proofs) ->
+                    detectUpdate txIn txOut
+                Just (Retract _ref) ->
+                    detectRetract txIn
+                _ -> []
+
+    detectUpdate _stateTxIn _stateTxOut =
+        -- Find the continuing output (new state)
+        let outputs =
+                toList
+                    (body ^. outputsTxBodyL)
+        in  case findStateDatumWithToken outputs of
+                Just (tid, newRoot) ->
+                    let consumed =
+                            findConsumedRequests
+                                tid
+                    in  [ CageUpdate
+                            tid
+                            newRoot
+                            consumed
+                        ]
+                Nothing -> []
+
+    findStateDatumWithToken outputs =
+        foldr
+            ( \txOut acc -> case acc of
+                Just _ -> acc
                 Nothing ->
-                    error
-                        "onChainToRequest: \
-                        \invalid owner hash"
-            op = case rVal of
-                OpInsert v -> Insert v
-                OpDelete v -> Delete v
-                OpUpdate o n -> Update o n
-        in  Request
-                { requestToken =
-                    TokenId
-                        (AssetName (SBS.toShort tidBs))
-                , requestOwner = kh
-                , requestKey = rKey
-                , requestValue = op
-                , requestFee = Coin rFee
-                , requestSubmittedAt = rSub
-                }
+                    case txOut ^. addrTxOutL of
+                        Addr _ (ScriptHashObj sh) _
+                            | sh == scriptHash ->
+                                case extractDatum txOut of
+                                    Just (StateDatum ocs) ->
+                                        extractTokenId
+                                            txOut
+                                            ocs
+                                    _ -> Nothing
+                        _ -> Nothing
+            )
+            Nothing
+            outputs
 
--- ---------------------------------------------------------
--- Event application
--- ---------------------------------------------------------
+    extractTokenId txOut ocs =
+        let MaryValue _ (MultiAsset ma) =
+                txOut ^. valueTxOutL
+        in  case Map.lookup policyId ma of
+                Just assets ->
+                    case Map.toList assets of
+                        [(an, _)] ->
+                            Just
+                                ( TokenId an
+                                , Root
+                                    $ unOnChainRoot
+                                    $ stateRoot ocs
+                                )
+                        _ -> Nothing
+                Nothing -> Nothing
 
--- | Apply a cage event to the state and trie
--- manager.
-applyCageEvent
-    :: State IO
-    -> TrieManager IO
-    -> CageEvent
-    -> IO ()
-applyCageEvent st tm = \case
-    CageBoot tid ts -> do
-        putToken (tokens st) tid ts
-        createTrie tm tid
-    CageRequest txIn req ->
-        putRequest (requests st) txIn req
-    CageUpdate tid newRoot consumed -> do
-        mTs <- getToken (tokens st) tid
-        case mTs of
-            Just ts ->
-                putToken
-                    (tokens st)
-                    tid
-                    ts{root = newRoot}
-            Nothing -> pure ()
-        mapM_
-            (removeRequest (requests st))
-            consumed
-    CageRetract txIn ->
-        removeRequest (requests st) txIn
-    CageBurn tid -> do
-        removeToken (tokens st) tid
-        deleteTrie tm tid
+    findConsumedRequests tid =
+        [ fst ri
+        | ri <- resolvedInputs
+        , isRequestForToken tid ri
+        ]
+
+    isRequestForToken tid (_, txOut) =
+        case extractDatum txOut of
+            Just (RequestDatum OnChainRequest{requestToken = ocTid}) ->
+                let OnChainTokenId (BuiltinByteString bs) =
+                        ocTid
+                in  TokenId
+                        (AssetName (SBS.toShort bs))
+                        == tid
+            _ -> False
+
+    detectRetract txIn = [CageRetract txIn]
 
 -- | Compute inverse operations for a cage event,
 -- given the cage state before the event.
@@ -458,3 +375,84 @@ inversesOf lookupToken lookupReq = \case
         case lookupToken tid of
             Just ts -> [InvRestoreToken tid ts]
             Nothing -> []
+
+-- --------------------------------------------------------
+-- On-chain → off-chain conversion
+-- --------------------------------------------------------
+
+-- | Convert on-chain 'OnChainTokenState' to off-chain
+-- 'TokenState'.
+fromOnChainState :: OnChainTokenState -> TokenState
+fromOnChainState OnChainTokenState{..} =
+    TokenState
+        { owner = keyHashFromBBS stateOwner
+        , root = Root (unOnChainRoot stateRoot)
+        , maxFee = Coin stateMaxFee
+        , processTime = stateProcessTime
+        , retractTime = stateRetractTime
+        }
+
+-- | Convert on-chain 'OnChainRequest' to off-chain
+-- 'Request'.
+fromOnChainReq :: Addr -> OnChainRequest -> Request
+fromOnChainReq _addr OnChainRequest{..} =
+    Request
+        { requestToken =
+            tokenIdFromOnChain requestToken
+        , requestOwner =
+            keyHashFromBBS requestOwner
+        , requestKey = requestKey
+        , requestValue =
+            fromOnChainOp requestValue
+        , requestFee = Coin requestFee
+        , requestSubmittedAt = requestSubmittedAt
+        }
+
+fromOnChainOp :: OnChainOperation -> Operation
+fromOnChainOp = \case
+    OpInsert v -> Insert v
+    OpDelete v -> Delete v
+    OpUpdate o n -> Update o n
+
+tokenIdFromOnChain :: OnChainTokenId -> TokenId
+tokenIdFromOnChain (OnChainTokenId (BuiltinByteString bs)) =
+    TokenId (AssetName (SBS.toShort bs))
+
+-- --------------------------------------------------------
+-- Helpers
+-- --------------------------------------------------------
+
+-- | Extract an inline 'CageDatum' from a 'TxOut'.
+extractDatum
+    :: TxOut ConwayEra -> Maybe CageDatum
+extractDatum txOut =
+    case txOut ^. datumTxOutL of
+        Datum bd ->
+            let Data plcData = binaryDataToData bd
+            in  fromBuiltinData (BuiltinData plcData)
+        _ -> Nothing
+
+-- | Compute the spending index of a 'TxIn' in
+-- the set of all transaction inputs.
+spendingIndex
+    :: TxIn
+    -> Set.Set TxIn
+    -> Word32
+spendingIndex needle inputs =
+    go 0 (Set.toAscList inputs)
+  where
+    go _ [] =
+        error "spendingIndex: TxIn not in input set"
+    go n (x : xs)
+        | x == needle = n
+        | otherwise = go (n + 1) xs
+
+-- | Convert a 'BuiltinByteString' containing a
+-- payment key hash to a 'KeyHash'.
+keyHashFromBBS
+    :: BuiltinByteString -> KeyHash 'Payment
+keyHashFromBBS (BuiltinByteString bs) =
+    case hashFromBytes bs of
+        Just h -> KeyHash h
+        Nothing ->
+            error "keyHashFromBBS: invalid hash"
