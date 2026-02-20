@@ -15,6 +15,7 @@ import Cardano.MPFS.Trie.PureManager
 import Cardano.MPFS.BalanceSpec qualified as BalanceSpec
 import Cardano.MPFS.Indexer.CageEventSpec qualified as CageEventSpec
 import Cardano.MPFS.Indexer.CodecsSpec qualified as CodecsSpec
+import Cardano.MPFS.Indexer.InverseSpec qualified as InverseSpec
 import Cardano.MPFS.OnChainSpec qualified as OnChainSpec
 import Cardano.MPFS.ProofSpec qualified as ProofSpec
 import Cardano.MPFS.StateSpec qualified as StateSpec
@@ -27,6 +28,7 @@ main = hspec $ do
     BalanceSpec.spec
     CageEventSpec.spec
     CodecsSpec.spec
+    InverseSpec.spec
     TrieSpec.spec mkPureTrie
     TrieManagerSpec.spec mkPureTrieManager
     StateSpec.spec

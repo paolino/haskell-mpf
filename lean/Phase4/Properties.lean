@@ -8,6 +8,10 @@
 
 import Phase4.Domain
 
+-- Precondition parameters are not used in the Prop body
+-- but document requirements for the QC test harness.
+set_option linter.unusedVariables false
+
 namespace Phase4
 
 variable {SlotNo TokenId TxIn Root : Type}
@@ -172,5 +176,111 @@ def prop_multiBlockRollback
     (fun cs invs => applyInvs cs invs)
     final
   restored = pre
+
+-- -------------------------------------------------------
+-- PROPERTY 6: Boot/Burn symmetry
+--
+-- QC: boot a fresh token then burn it; the state
+-- should be unchanged.
+-- -------------------------------------------------------
+
+/-- Booting then burning a fresh token restores the
+    original state (when the token wasn't present). -/
+def prop_bootBurnRoundTrip
+    (cs : CageState TokenId TxIn Root)
+    (tid : TokenId) (root : Root)
+    (hFresh : ∀ r, (tid, r) ∉ cs.tokens)
+    : Prop :=
+  applyEvent
+    (applyEvent cs (.boot tid root)) (.burn tid)
+    = cs
+
+-- -------------------------------------------------------
+-- PROPERTY 7: Request/Retract symmetry
+--
+-- QC: submit a request then retract it; the state
+-- should be unchanged.
+-- -------------------------------------------------------
+
+/-- Requesting then retracting a fresh TxIn restores
+    the original state (when the TxIn wasn't present).
+    -/
+def prop_requestRetractRoundTrip
+    (cs : CageState TokenId TxIn Root)
+    (txIn : TxIn)
+    (hFresh : txIn ∉ cs.requests)
+    : Prop :=
+  applyEvent
+    (applyEvent cs (.request txIn)) (.retract txIn)
+    = cs
+
+-- -------------------------------------------------------
+-- PROPERTY 8: Update preserves non-target tokens
+--
+-- QC: after an update on token A, token B (B ≠ A)
+-- still has its original root.
+-- -------------------------------------------------------
+
+/-- An update for one token does not affect other
+    tokens' state entries. -/
+def prop_updatePreservesOtherTokens
+    (cs : CageState TokenId TxIn Root)
+    (tidA tidB : TokenId) (newRoot rootB : Root)
+    (consumed : List TxIn)
+    (hNeq : tidA ≠ tidB)
+    (hMem : (tidB, rootB) ∈ cs.tokens)
+    : Prop :=
+  (tidB, rootB)
+    ∈ (applyEvent cs
+        (.update tidA newRoot consumed)).tokens
+
+-- -------------------------------------------------------
+-- PROPERTY 9: Burn only removes target
+--
+-- QC: burning token A preserves token B (B ≠ A).
+-- -------------------------------------------------------
+
+/-- Burning one token preserves all other tokens. -/
+def prop_burnPreservesOtherTokens
+    (cs : CageState TokenId TxIn Root)
+    (tidA tidB : TokenId) (rootB : Root)
+    (hNeq : tidA ≠ tidB)
+    (hMem : (tidB, rootB) ∈ cs.tokens)
+    : Prop :=
+  (tidB, rootB)
+    ∈ (applyEvent cs (.burn tidA)).tokens
+
+-- -------------------------------------------------------
+-- PROPERTY 10: Inverse correctness per event type
+--
+-- QC: verify the specific inverse ops produced for
+-- each event type are correct.
+-- -------------------------------------------------------
+
+/-- Boot's inverse is exactly [removeToken tid]. -/
+def prop_inverseOfBootCorrect
+    (cs : CageState TokenId TxIn Root)
+    (tid : TokenId) (root : Root)
+    : Prop :=
+  inverseOf cs (.boot tid root)
+    = [.removeToken tid]
+
+/-- Request's inverse is exactly
+    [removeRequest txIn]. -/
+def prop_inverseOfRequestCorrect
+    (cs : CageState TokenId TxIn Root)
+    (txIn : TxIn)
+    : Prop :=
+  inverseOf cs (.request txIn)
+    = [.removeRequest txIn]
+
+/-- Retract's inverse is exactly
+    [restoreRequest txIn]. -/
+def prop_inverseOfRetractCorrect
+    (cs : CageState TokenId TxIn Root)
+    (txIn : TxIn)
+    : Prop :=
+  inverseOf cs (.retract txIn)
+    = [.restoreRequest txIn]
 
 end Phase4

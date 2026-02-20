@@ -15,6 +15,7 @@ module Cardano.MPFS.Generators
     , genOperation
     , genSlotNo
     , genBlockId
+    , genCageEvent
     ) where
 
 import Data.ByteString qualified as BS
@@ -28,6 +29,8 @@ import Test.QuickCheck
     , arbitrary
     , choose
     , elements
+    , listOf1
+    , oneof
     , vectorOf
     )
 
@@ -42,6 +45,7 @@ import Cardano.Ledger.Keys (KeyHash (..), KeyRole (..))
 import Cardano.Ledger.Slot (SlotNo (..))
 import Cardano.Ledger.TxIn (TxId (..), TxIn (..))
 
+import Cardano.MPFS.Indexer.CageEvent (CageEvent (..))
 import Cardano.MPFS.Types
     ( AssetName (..)
     , BlockId (..)
@@ -158,3 +162,19 @@ genSlotNo = SlotNo <$> choose (0 :: Word64, 1000000)
 genBlockId :: Gen BlockId
 genBlockId =
     BlockId . BS.pack <$> vectorOf 32 arbitrary
+
+-- | Generate a 'CageEvent'.
+genCageEvent :: Gen CageEvent
+genCageEvent = do
+    tid <- genTokenId
+    oneof
+        [ CageBoot tid <$> genTokenState
+        , CageRequest
+            <$> genTxIn
+            <*> genRequest tid
+        , CageUpdate tid
+            <$> genRoot
+            <*> listOf1 genTxIn
+        , CageRetract <$> genTxIn
+        , pure (CageBurn tid)
+        ]
