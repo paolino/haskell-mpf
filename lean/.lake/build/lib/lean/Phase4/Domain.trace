@@ -1,0 +1,28 @@
+{"synthetic": false,
+ "schemaVersion": "2025-09-10",
+ "outputs":
+ {"o": ["1cd19cd7a8eb011d.olean"],
+  "i": "b368891e81eeb5d2.ilean",
+  "c": "1ecbc8cd632e00b1.c"},
+ "log":
+ [{"message":
+   ".> LEAN_PATH=/code/cardano-mpfs-offchain-feat-phase4-indexer-persistence/lean/.lake/build/lib/lean /home/paolino/.elan/toolchains/leanprover--lean4---v4.28.0/bin/lean /code/cardano-mpfs-offchain-feat-phase4-indexer-persistence/lean/Phase4/Domain.lean -o /code/cardano-mpfs-offchain-feat-phase4-indexer-persistence/lean/.lake/build/lib/lean/Phase4/Domain.olean -i /code/cardano-mpfs-offchain-feat-phase4-indexer-persistence/lean/.lake/build/lib/lean/Phase4/Domain.ilean -c /code/cardano-mpfs-offchain-feat-phase4-indexer-persistence/lean/.lake/build/ir/Phase4/Domain.c --setup /code/cardano-mpfs-offchain-feat-phase4-indexer-persistence/lean/.lake/build/ir/Phase4/Domain.setup.json --json",
+   "level": "trace"}],
+ "inputs":
+ [["Phase4.Domain:deps",
+   [["deps",
+     [["«phase4-invariants»/Phase4:extraDep",
+       [["@«phase4-invariants»:extraDep", "00000000000006bb"]]],
+      ["imports", "00000000000006bb"]]],
+    ["libs",
+     [["import dynlibs", "00000000000006bb"],
+      ["package external libraries", "00000000000006bb"],
+      ["module dynlibs", "00000000000006bb"],
+      ["module plugins", "00000000000006bb"]]]]],
+  ["Lean 4.28.0, commit 7e01a1bf5c70fc6167d49c345d3bf80596e9a79b",
+   "a96bc04a2e5e9630"],
+  ["/code/cardano-mpfs-offchain-feat-phase4-indexer-persistence/lean/Phase4/Domain.lean",
+   "f5874e23f8bd2409"],
+  ["options", [["-DautoImplicit=false", "4a85acb881fd49d0"]]],
+  ["Module.leanArgs: #[]", "00000000000006bb"]],
+ "depHash": "af9ff1c15f1623d6"}
