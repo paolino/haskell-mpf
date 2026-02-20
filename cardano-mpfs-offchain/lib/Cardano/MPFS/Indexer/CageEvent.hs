@@ -79,7 +79,7 @@ inversesOf
     -- ^ Request lookup in current state
     -> CageEvent
     -> [CageInverseOp]
-inversesOf lookupToken _lookupReq = \case
+inversesOf lookupToken lookupReq = \case
     CageBoot tid _ts ->
         [InvRemoveToken tid]
     CageRequest txIn _req ->
@@ -90,10 +90,19 @@ inversesOf lookupToken _lookupReq = \case
                     [InvRestoreRoot tid (root ts)]
                 Nothing -> []
             restoreReqs =
-                map InvRemoveRequest consumed
+                concatMap
+                    ( \txIn' -> case lookupReq txIn' of
+                        Just req ->
+                            [InvRestoreRequest txIn' req]
+                        Nothing -> []
+                    )
+                    consumed
         in  restoreRoot ++ restoreReqs
     CageRetract txIn ->
-        [InvRemoveRequest txIn]
+        case lookupReq txIn of
+            Just req ->
+                [InvRestoreRequest txIn req]
+            Nothing -> []
     CageBurn tid ->
         case lookupToken tid of
             Just ts -> [InvRestoreToken tid ts]

@@ -55,11 +55,21 @@ spec = describe "CageEvent" $ do
                 inversesOf noTokens noReqs (CageRequest txIn req)
                     `shouldBe` [InvRemoveRequest txIn]
 
-        it "retract produces InvRemoveRequest"
+        it "retract with known request produces InvRestoreRequest"
+            $ forAll genRetractKnown
+            $ \(txIn, req) ->
+                let reqs = Map.singleton txIn req
+                in  inversesOf
+                        noTokens
+                        (`Map.lookup` reqs)
+                        (CageRetract txIn)
+                        `shouldBe` [InvRestoreRequest txIn req]
+
+        it "retract with unknown request produces empty"
             $ forAll genTxIn
             $ \txIn ->
                 inversesOf noTokens noReqs (CageRetract txIn)
-                    `shouldBe` [InvRemoveRequest txIn]
+                    `shouldBe` []
 
         it "burn with known token produces InvRestoreToken"
             $ forAll genBurnKnown
@@ -78,29 +88,38 @@ spec = describe "CageEvent" $ do
                     `shouldBe` []
 
         it
-            "update with known token produces InvRestoreRoot + InvRemoveRequest per consumed"
-            $ forAll genUpdateKnown
-            $ \(tid, ts, newRoot, consumed) ->
-                let tokens = Map.singleton tid ts
+            "update with known token+requests produces InvRestoreRoot + InvRestoreRequest"
+            $ forAll genUpdateKnownFull
+            $ \(tid, ts, newRoot, txIn, req) ->
+                let tokMap = Map.singleton tid ts
+                    reqMap = Map.singleton txIn req
                     result =
                         inversesOf
-                            (`Map.lookup` tokens)
-                            noReqs
-                            (CageUpdate tid newRoot consumed)
+                            (`Map.lookup` tokMap)
+                            (`Map.lookup` reqMap)
+                            ( CageUpdate
+                                tid
+                                newRoot
+                                [txIn]
+                            )
                 in  result
-                        `shouldBe` ( InvRestoreRoot tid (root ts)
-                                        : map InvRemoveRequest consumed
-                                   )
+                        `shouldBe` [ InvRestoreRoot
+                                        tid
+                                        (root ts)
+                                   , InvRestoreRequest
+                                        txIn
+                                        req
+                                   ]
 
         it
-            "update with unknown token produces only InvRemoveRequest per consumed"
+            "update with unknown token and no requests produces empty"
             $ forAll genUpdateUnknown
             $ \(tid, newRoot, consumed) ->
                 inversesOf
                     noTokens
                     noReqs
                     (CageUpdate tid newRoot consumed)
-                    `shouldBe` map InvRemoveRequest consumed
+                    `shouldBe` []
 
 -- Helpers
 
@@ -125,14 +144,22 @@ genReqEvent = do
 genBurnKnown :: Gen (TokenId, TokenState)
 genBurnKnown = (,) <$> genTokenId <*> genTokenState
 
-genUpdateKnown
-    :: Gen (TokenId, TokenState, Root, [TxIn])
-genUpdateKnown =
-    (,,,)
-        <$> genTokenId
-        <*> genTokenState
-        <*> genRoot
-        <*> listOf1 genTxIn
+genRetractKnown :: Gen (TxIn, Request)
+genRetractKnown = do
+    tid <- genTokenId
+    txIn <- genTxIn
+    req <- genRequest tid
+    pure (txIn, req)
+
+genUpdateKnownFull
+    :: Gen (TokenId, TokenState, Root, TxIn, Request)
+genUpdateKnownFull = do
+    tid <- genTokenId
+    ts <- genTokenState
+    newRoot <- genRoot
+    txIn <- genTxIn
+    req <- genRequest tid
+    pure (tid, ts, newRoot, txIn, req)
 
 genUpdateUnknown :: Gen (TokenId, Root, [TxIn])
 genUpdateUnknown =

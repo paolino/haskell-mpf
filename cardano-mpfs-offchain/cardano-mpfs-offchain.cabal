@@ -142,6 +142,7 @@ test-suite unit-tests
     Cardano.MPFS.Generators
     Cardano.MPFS.Indexer.CageEventSpec
     Cardano.MPFS.Indexer.CodecsSpec
+    Cardano.MPFS.Indexer.InverseSpec
     Cardano.MPFS.OnChainSpec
     Cardano.MPFS.ProofSpec
     Cardano.MPFS.StateSpec
