@@ -88,31 +88,6 @@ spec = describe "Codecs" $ do
                             === Just cp
 
     -- -------------------------------------------
-    -- Determinism (Lean: PrismLaw)
-    -- -------------------------------------------
-    describe "determinism" $ do
-        prop "tokenStatePrism encodes consistently"
-            $ forAll genTokenState
-            $ \ts ->
-                review tokenStatePrism ts
-                    === review tokenStatePrism ts
-
-        prop "requestPrism encodes consistently"
-            $ forAll genTokenId
-            $ \tid ->
-                forAll (genRequest tid) $ \req ->
-                    review requestPrism req
-                        === review requestPrism req
-
-        prop "checkpointPrism encodes consistently"
-            $ forAll genSlotNo
-            $ \s ->
-                forAll genBlockId $ \b ->
-                    let cp = CageCheckpoint s b
-                    in  review checkpointPrism cp
-                            === review checkpointPrism cp
-
-    -- -------------------------------------------
     -- Injectivity (Lean: roundTrip_implies_injective)
     -- -------------------------------------------
     describe "injectivity" $ do
