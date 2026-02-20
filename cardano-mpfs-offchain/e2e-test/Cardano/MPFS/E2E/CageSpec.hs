@@ -20,6 +20,11 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Word (Word8)
 import Lens.Micro ((^.))
+import System.Directory
+    ( createDirectoryIfMissing
+    , getTemporaryDirectory
+    , removePathForcibly
+    )
 import System.Environment (lookupEnv)
 import System.FilePath (takeDirectory, (</>))
 import System.Process (readProcessWithExitCode)
@@ -485,6 +490,11 @@ withE2E
     -> IO a
 withE2E scriptBytes action = do
     gDir <- genesisDir
+    sysTmp <- getTemporaryDirectory
+    let rocksDir =
+            sysTmp </> "cardano-mpfs-e2e-rocks"
+    removePathForcibly rocksDir
+    createDirectoryIfMissing True rocksDir
     withCardanoNode gDir $ \sock startMs -> do
         let cfg = cageCfg scriptBytes startMs
             appCfg =
@@ -492,6 +502,7 @@ withE2E scriptBytes action = do
                     { networkMagic =
                         devnetMagic
                     , socketPath = sock
+                    , dbPath = rocksDir
                     , channelCapacity = 16
                     , cageConfig = cfg
                     }
