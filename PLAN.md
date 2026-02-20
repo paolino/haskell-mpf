@@ -21,12 +21,20 @@ resolution surprises.
 ```mermaid
 flowchart TD
     http["mpfs-service — HTTP service (Servant)"]
-    mpf["MPF trie (merkle-patricia-forestry) ✓ DONE\nProofs, insertion, deletion"]
-    txb["Transaction building interface\nCoin selection, fee estimation\n(record of functions)"]
-    csmt["cardano-utxo-csmt (embedded)\nUTxO queries via address prefix\nMithril bootstrap, ChainSync\n(replaces Yaci Store)"]
-    node["Node client (node-to-client)\nLocal state query + tx submission"]
+    ctx["Context IO — facade record"]
+    mpf["merkle-patricia-forestry ✓\n16-ary trie, proofs, insertion, deletion"]
+    txb["TxBuilder ✓\nboot, request, update, retract, end"]
+    bal["Balance ✓\nfee estimation, coin selection"]
+    prov["Provider ✓\nUTxO queries, protocol params"]
+    sub["Submitter ✓\nLocalTxSubmission"]
+    idx["Indexer\nChainSync follower (skeleton)"]
+    node["Cardano Node\n(node-to-client socket)"]
 
-    http --> mpf --> txb --> csmt --> node
+    http --> ctx
+    ctx --> txb --> bal --> prov --> node
+    ctx --> mpf
+    ctx --> sub --> node
+    ctx --> idx --> node
 ```
 
 ### Infrastructure decisions
@@ -34,337 +42,323 @@ flowchart TD
 **No Yaci Store, no Ogmios.** The only external dependency is
 a Cardano node. Everything else is embedded.
 
-**Why this works:** cardano-utxo-csmt already connects to the
-node for ChainSync. The node exposes three mini-protocols on
-its local Unix socket (node-to-client):
+Node-to-client mini-protocols on the local Unix socket:
 
-1. **ChainSync** — follow the chain block by block (csmt has this)
-2. **LocalStateQuery** — query ledger state (protocol parameters)
-3. **LocalTxSubmission** — submit signed transactions
+1. **LocalStateQuery** — UTxO queries by address, protocol
+   parameters (cached per epoch)
+2. **LocalTxSubmission** — submit signed transactions
+3. **ChainSync** — follow the chain block by block (indexer)
 
-All three share a single multiplexed connection to the node
-socket. No extra processes, no WebSocket wrappers.
+All three share a single multiplexed connection.
 
-**What we get from each:**
+## Packages
 
-| Need | Source | Why |
-|------|--------|-----|
-| Full UTxO set | csmt ChainSync + Mithril bootstrap | Already done |
-| UTxOs by address | csmt prefix scan (re-keyed) | Key = `addr ++ txId ++ txIx` |
-| Protocol params | LocalStateQuery | Fee coefficients, max tx size, min UTxO, collateral %, execution prices. Cached per epoch (~5 days) |
-| Tx evaluation | LocalStateQuery | Execution unit estimation for Plutus scripts |
-| Tx submission | LocalTxSubmission | Submit signed CBOR to the node mempool |
-| Chain tip | csmt ChainSync | Already tracked |
-| Block/tx info | csmt RocksDB | Stored during ChainSync processing |
+### 1. `merkle-patricia-forestry` — core data structure ✓
 
-**Runtime stack:** Cardano node only.
-
-## TypeScript Singleton Map
-
-The existing TypeScript service (`mpfs/off_chain/`) is built around
-6 singletons — records of async functions, created once at startup
-and passed around explicitly. This is the architecture we replicate
-in Haskell (replacing `Promise<T>` with `m a`).
-
-### Dependency graph
-
-```mermaid
-graph TD
-    HTTP["HTTP API (Servant)"]
-    CTX["Context\n(facade record)"]
-    PRV["Provider\n(CSMT + node queries)"]
-    TM["TrieManager\n(per-token MPF tries)"]
-    ST["State\n(tokens, requests, rollbacks)"]
-    IDX["Indexer\n(ChainSync follower)"]
-    SUB["Submitter\n(LocalTxSubmission)"]
-    DB["LevelDB / RocksDB"]
-    NODE["Cardano Node\n(node-to-client socket)"]
-
-    HTTP --> CTX
-    CTX --> PRV
-    CTX --> TM
-    CTX --> ST
-    CTX --> IDX
-    CTX --> SUB
-    PRV --> DB
-    PRV --> NODE
-    TM --> DB
-    ST --> DB
-    IDX --> NODE
-    IDX --> ST
-    IDX --> TM
-    SUB --> NODE
-```
-
-### The 6 singletons
-
-**1. Provider** — blockchain queries (read-only)
-
-UTxO lookups via cardano-utxo-csmt (address prefix scan on
-the embedded CSMT). Protocol parameters and tx evaluation
-via node-to-client local-state-query.
-
-```
-Provider m = Provider
-  { fetchUtxos         :: Address -> m [UTxO]  -- CSMT prefix scan
-  , fetchProtocolParams :: m ProtocolParams     -- node local-state-query
-  , evaluateTx         :: TxCBOR -> m ExUnits   -- node local-state-query
-  }
-```
-
-**2. TrieManager** — per-token MPF trie storage
-
-Manages a map of token-id to MPF trie, backed by LevelDB
-sublevels. Mutex-locked access. Supports hide/unhide for
-rollback handling.
-
-```
-TrieManager m = TrieManager
-  { withTrie :: TokenId -> (SafeTrie m -> m a) -> m a
-  , trieIds  :: m [TokenId]
-  , hide     :: TokenId -> m ()
-  , unhide   :: TokenId -> m ()
-  , delete   :: TokenId -> m ()
-  }
-```
-
-**3. State** — chain-derived state (tokens, requests, rollbacks)
-
-Tracks known tokens, pending requests, checkpoints, and
-rollback journal. All in LevelDB sublevels. Mutex-locked.
-
-```
-State m = State
-  { addToken      :: Slotted Token -> m ()
-  , removeToken   :: Slotted TokenId -> m ()
-  , updateToken   :: Slotted TokenChange -> m ()
-  , addRequest    :: Slotted Request -> m ()
-  , removeRequest :: Slotted OutputRef -> m ()
-  , rollback      :: WithOrigin Slot -> m ()
-  , tokens        :: Tokens m
-  , requests      :: Requests m
-  , checkpoints   :: Checkpoints m
-  }
-```
-
-**4. Indexer** — ChainSync follower (via csmt)
-
-Node-to-client ChainSync, reusing the csmt connection.
-Follows the chain block by block, calling a Process
-function for each transaction. Pausable via mutex (paused
-during tx building to avoid state races).
-
-```
-Indexer m = Indexer
-  { tips       :: m (NetworkTip, IndexerTip)
-  , waitBlocks :: Int -> m BlockHeight
-  , pause      :: m (m ())   -- returns release action
-  }
-```
-
-**5. Submitter** — node-to-client tx submission
-
-Uses LocalTxSubmission mini-protocol on the same node
-socket. No extra connections or processes.
-
-```
-Submitter m = Submitter
-  { submitTx :: TxCBOR -> m TxHash
-  }
-```
-
-**6. Context** — facade record
-
-Bundles all singletons into one record passed to transaction
-builders and HTTP handlers. This is the main "environment"
-threaded through the application.
-
-```
-Context m = Context
-  { cagingScript  :: CagingScript
-  , signingWallet :: Maybe (SigningWallet m)
-  , addressWallet :: Address -> m WalletInfo
-  , newTxBuilder  :: m (TxBuilder m)
-  , fetchTokens   :: m [Token]
-  , fetchToken    :: TokenId -> m (Maybe Token)
-  , fetchRequests :: Maybe TokenId -> m [Request]
-  , evaluateTx    :: TxCBOR -> m ExUnits
-  , withTrie      :: TokenId -> (SafeTrie m -> m a) -> m a
-  , waitBlocks    :: Int -> m BlockHeight
-  , tips          :: m (NetworkTip, IndexerTip)
-  , waitSettlement :: TxHash -> m BlockHash
-  , facts         :: TokenId -> m (Map Key Value)
-  , pauseIndexer  :: m (m ())
-  , submitTx      :: TxCBOR -> m TxHash
-  }
-```
-
-### Creation order
-
-Singletons are created bottom-up and torn down top-down
-(bracket pattern / `withX` nesting):
-
-```mermaid
-graph LR
-    DB["LevelDB"]
-    TM["TrieManager"]
-    ST["State"]
-    PR["Process\n(pure function)"]
-    IDX["Indexer"]
-    CTX["Context"]
-    API["HTTP API"]
-
-    DB --> TM --> ST --> PR --> IDX --> CTX --> API
-```
-
-Each layer is created with a `withX` bracket that guarantees
-cleanup (close connections, flush DB) on exit.
-
-## Components
-
-### 1. MPF Library ✓ DONE
-
-Repository: `paolino/cardano-mpfs-offchain` (package: merkle-patricia-forestry)
-
-- 16-ary Merkle Patricia Forestry
-- Blake2b-256, Aiken-compatible
-- Proofs, insertion, deletion
+- 16-ary hex-based Patricia trie with Blake2b-256 hashing
+- Insertion, deletion, cryptographic inclusion proofs
+- Aiken-compatible CBOR proof serialization
 - Pure + RocksDB backends
+- Property tests + cross-validation
 
-### 2. Transaction Building Interface
+### 2. `cardano-mpfs-offchain` — Cardano integration ✓
 
-**Goal:** Define a pluggable interface (record of functions) for
-transaction building. The backend implementation is deferred —
-could be extracted from cardano-wallet, or a lightweight custom
-implementation.
+36 library modules, 8 unit test modules, 5 E2E test modules.
 
-**Interface covers:**
-- Coin selection: pick inputs to cover outputs + fees
-- Fee estimation: compute fees for a given transaction body
-- Balancing: adjust a partial transaction to be valid
-  (inputs ≥ outputs + fees, correct change outputs)
+## Interfaces (record of functions)
 
-**Shape** (sketch):
+### Context — facade
 
 ```haskell
-data TxBuilder m = TxBuilder
-  { balanceTx
-      :: PartialTx -> UTxOSet -> ProtocolParams -> m BalancedTx
-  , estimateFee
-      :: TxBody -> ProtocolParams -> m Coin
-  , selectCoins
-      :: CoinSelectionGoal -> UTxOSet -> m CoinSelection
-  }
+Context m = Context
+    { provider    :: Provider m
+    , trieManager :: TrieManager m
+    , state       :: State m
+    , indexer     :: Indexer m
+    , submitter   :: Submitter m
+    , txBuilder   :: TxBuilder m
+    }
 ```
 
-No typeclasses — pass `TxBuilder m` explicitly.
+### Provider — blockchain queries ✓
 
-**Possible backends (decided later):**
-- Extracted `cardano-balance-tx` from cardano-wallet
-- Lightweight custom implementation (our transactions are simple)
-- Mock backend for testing
+```haskell
+Provider m = Provider
+    { queryUTxOs        :: Addr -> m [(TxIn, TxOut ConwayEra)]
+    , queryProtocolParams :: m (PParams ConwayEra)
+    , evaluateTx        :: ByteString -> m ExUnits
+    }
+```
 
-### 3. UTxO Index (cardano-utxo-csmt)
+Real implementation: `Provider.NodeClient` — N2C
+LocalStateQuery.
 
-**Replaces Yaci Store entirely.** We embed cardano-utxo-csmt as a
-library dependency. It provides:
+### Submitter — tx submission ✓
 
-- Full UTxO set via Mithril bootstrap + ChainSync
-- RocksDB-backed CSMT with rollback support
-- Merkle inclusion proofs for any UTxO
+```haskell
+newtype Submitter m = Submitter
+    { submitTx :: Tx ConwayEra -> m SubmitResult
+    }
 
-**Required change:** re-key the CSMT to `address ++ txId ++ txIx`
-so that `seekKey(addressPrefix)` + cursor iteration gives all
-UTxOs at an address. This is a change in `UTxOs.hs` key encoding,
-not in the CSMT library itself.
+data SubmitResult = Submitted TxId | Rejected ByteString
+```
 
-**Node-to-client mini-protocols** (no Ogmios needed):
-- `LocalStateQuery` — protocol parameters (cached per epoch),
-  tx evaluation (execution units for Plutus scripts)
-- `LocalTxSubmission` — submit signed transactions
-- These share the same multiplexed socket connection that csmt
-  already opens for ChainSync
+Real implementation: `Submitter.N2C` — N2C
+LocalTxSubmission.
 
-### 4. Service Layer
+### TxBuilder — cage protocol transactions ✓
 
-**Mirrors the TypeScript service:**
-- HTTP API (GET/POST) for facts, proofs
-- Swagger/OpenAPI docs
-- Chain indexer watches for MPF-related transactions
-- Submitter with retry logic
+```haskell
+TxBuilder m = TxBuilder
+    { bootToken     :: Addr -> m (Tx ConwayEra)
+    , requestInsert :: TokenId -> ByteString -> ByteString
+                    -> Addr -> m (Tx ConwayEra)
+    , requestDelete :: TokenId -> ByteString
+                    -> Addr -> m (Tx ConwayEra)
+    , updateToken   :: TokenId -> Addr -> m (Tx ConwayEra)
+    , retractRequest :: TxIn -> Addr -> m (Tx ConwayEra)
+    , endToken      :: TokenId -> Addr -> m (Tx ConwayEra)
+    }
+```
 
-**From the TypeScript codebase (`mpfs/off_chain/`):**
-- `service/signingless/` — HTTP endpoints
-- `indexer/` — chain event watching via Ogmios
-- `transactions/` — boot, request, update, retract tx builders
-- `submitter.ts` — submission + retry
+Real implementation: `TxBuilder.Real.*` — builds Conway-era
+transactions with PlutusV3 scripts, inline datums, validity
+intervals.
+
+Sub-modules: `Boot`, `Request`, `Update`, `Retract`,
+`Internal` (shared helpers, slot conversion, balance).
+
+### State — chain-derived state ✓
+
+```haskell
+State m = State
+    { tokens      :: Tokens m
+    , requests    :: Requests m
+    , checkpoints :: Checkpoints m
+    }
+
+Tokens m = Tokens
+    { getToken, putToken, removeToken, listTokens }
+
+Requests m = Requests
+    { getRequest, putRequest, removeRequest
+    , requestsByToken }
+
+Checkpoints m = Checkpoints
+    { getCheckpoint, putCheckpoint }
+```
+
+Implementation: `Mock.State` (TVar-backed). Persistent
+backend needed for production.
+
+### TrieManager — per-token MPF tries ✓
+
+```haskell
+TrieManager m = TrieManager
+    { withTrie    :: TokenId -> (Trie m -> m a) -> m a
+    , createTrie  :: TokenId -> m ()
+    , deleteTrie  :: TokenId -> m ()
+    }
+
+Trie m = Trie
+    { insert, delete, lookup, getRoot
+    , getProof, getProofSteps }
+```
+
+Implementation: `Trie.PureManager` (in-memory). RocksDB
+backend available from `merkle-patricia-forestry`.
+
+### Indexer — chain follower
+
+```haskell
+Indexer m = Indexer
+    { start, stop, pause, resume
+    , getTip :: m ChainTip
+    }
+```
+
+Implementation: `Indexer.Skeleton` (framework only).
+ChainSync block processing not yet wired.
+
+## Key domain types
+
+```haskell
+newtype TokenId = TokenId AssetName
+newtype Root    = Root ByteString
+newtype BlockId = BlockId ByteString
+
+data Request = Request
+    { requestToken, requestOwner, requestKey
+    , requestValue :: Operation
+    , requestFee, requestSubmittedAt }
+
+data TokenState = TokenState
+    { owner, root, maxFee
+    , processTime, retractTime }
+
+data CageConfig = CageConfig
+    { cageScriptBytes, cfgScriptHash
+    , defaultProcessTime, defaultRetractTime
+    , defaultMaxFee, network
+    , systemStartPosixMs, slotLengthMs }
+```
+
+## The cage protocol
+
+Four operations, each a Plutus-validated transaction:
+
+| Step | Redeemer | What happens |
+|------|----------|-------------|
+| **Boot** | Mint | Mint cage token, create state UTxO with empty root |
+| **Request** | Contribute | Submit key/value request as separate UTxO |
+| **Update** | Modify | Consume requests, update trie root in state datum |
+| **Retract** | Contribute | Cancel pending request (Phase 2 window only) |
+
+Time phases (relative to request's `submittedAt`):
+- **Phase 1**: `[0, processTime)` — requests accepted
+- **Phase 2**: `[processTime, processTime + retractTime)` — retract allowed
+- **Phase 3**: `[processTime + retractTime, ∞)` — update forced
+
+Slot conversion: ceiling division for lower bounds
+(`posixMsCeilSlot`), floor division for upper bounds
+(`posixMsToSlot`), minus 1 for strict `entirely_before`.
+
+## Application wiring
+
+`Application.withApplication` creates the full `Context IO`:
+
+1. Open N2C multiplexed connection to the node socket
+2. Start LSQ + TxSubmission mini-protocol threads
+3. Wire `Provider.NodeClient` (LSQ queries)
+4. Wire `Submitter.N2C` (tx submission)
+5. Wire `TxBuilder.Real` (PlutusV3 cage transactions)
+6. Create `Mock.State` + `Trie.PureManager`
+7. Create `Mock.Indexer` (no-op)
+8. Bundle into `Context IO`
+
+## Tests
+
+| Suite | What | Status |
+|-------|------|--------|
+| **MPF unit-tests** | Trie ops, proof serialization, backends | ✓ |
+| **Offchain unit-tests** | Balance, OnChain, Proof, State, Trie, TxBuilder | ✓ |
+| **E2E ProviderSpec** | LSQ queries against devnet node | ✓ |
+| **E2E SubmitterSpec** | ADA transfer via N2C | ✓ |
+| **E2E CageSpec** | Full boot → request → update → retract | ✓ |
+
+E2E tests start a local `cardano-node` (devnet, ~0.1s slots),
+load the real PlutusV3 cage script from the Aiken blueprint
+(`MPFS_BLUEPRINT` env var), and exercise real Plutus evaluation.
+
+Aiken simulate is optionally run before submission for
+debugging (requires `aiken` in PATH).
+
+## CI (GitHub Actions)
+
+```
+build:  nix build unit-tests + offchain-tests
+        fourmolu check, cabal-fmt check, hlint
+e2e:    nix build e2e-tests
+        nix develop -c ./result/bin/e2e-tests
+        (cardano-node + aiken in nix shell)
+```
 
 ## Phases
 
 ```mermaid
 graph LR
-    P0["Phase 0\nMPF Library ✓"]
-    P1["Phase 1\nTxBuilder Interface"]
-    P2["Phase 2\nUTxO Index +\nNode Client"]
-    P3["Phase 3\nTransaction\nBuilders"]
-    P4["Phase 4\nService"]
-    P5["Phase 5\nDeployment"]
+    P0["Phase 0 ✓\nMPF Library"]
+    P1["Phase 1 ✓\nInterfaces +\nNode Client"]
+    P2["Phase 2 ✓\nTx Builders +\nBalance"]
+    P3["Phase 3 ✓\nE2E Tests"]
+    P4["Phase 4\nIndexer +\nPersistence"]
+    P5["Phase 5\nHTTP Service"]
+    P6["Phase 6\nDeployment"]
 
-    P0 --> P1 --> P2 --> P3 --> P4 --> P5
+    P0 --> P1 --> P2 --> P3 --> P4 --> P5 --> P6
 
     style P0 fill:#2d6,color:#fff
+    style P1 fill:#2d6,color:#fff
+    style P2 fill:#2d6,color:#fff
+    style P3 fill:#2d6,color:#fff
 ```
 
 ### Phase 0 — MPF Library ✓
-Extract MPF from haskell-csmt. Done.
 
-Completed:
-- Extracted `merkle-patricia-forestry` package from haskell-csmt
+- `merkle-patricia-forestry` package
 - Pure + RocksDB backends, 16-ary hex trie, Blake2b-256
-- Aiken-compatible CBOR proof serialization (#13, #16)
-- `cardano-mpfs-offchain` service interfaces with mock implementations (#5)
-- Renamed package from `haskell-mpfs` to `merkle-patricia-forestry` (#12)
-- 137 tests passing (unit tests + property tests + cross-validation)
+- Aiken-compatible CBOR proof serialization
+- Property tests + cross-validation
 
-### Phase 1 — Transaction Building Interface
-- Define `TxBuilder m` record of functions
-- Define domain types (PartialTx, UTxOSet, ProtocolParams, etc.)
-- Mock backend for testing
-- Actual backend implementation deferred to Phase 3
+### Phase 1 — Interfaces + Node Client ✓
 
-### Phase 2 — UTxO Index + Node Client
-- Embed cardano-utxo-csmt as library (Mithril + ChainSync)
-- Add address-prefixed key encoding for UTxO-by-address queries
-- Add LocalStateQuery for protocol params + tx evaluation
-- Add LocalTxSubmission for tx submission
-- All on the same node socket (no Ogmios)
+- Record-of-functions interfaces (`Context`, `Provider`,
+  `Submitter`, `TxBuilder`, `State`, `Trie`, `Indexer`)
+- Mock implementations for all interfaces
+- N2C multiplexed connection (`NodeClient.Connection`)
+- LocalStateQuery client (`NodeClient.LocalStateQuery`)
+- LocalTxSubmission client (`NodeClient.LocalTxSubmission`)
+- Real `Provider.NodeClient` (UTxO queries, protocol params)
+- Real `Submitter.N2C` (tx submission)
+- CIP-57 blueprint loading (`Blueprint`)
+- `Application` wiring module
 
-### Phase 3 — Transaction Builders
-- Boot transaction (create new MPF instance)
-- Update transaction (insert/delete facts with proofs)
-- Retract transaction
-- End transaction
-- Wire up balanceTx + signing
+### Phase 2 — Transaction Builders + Balance ✓
 
-### Phase 4 — Service
-- HTTP API matching TypeScript interface
-- Indexer for chain events
-- RocksDB-backed MPF trie state
-- Submitter with retry
+- On-chain type integration (`OnChain` — datums, redeemers,
+  policy ID, cage address, PlutusV3 script)
+- `TxBuilder.Real.Boot` — mint cage token
+- `TxBuilder.Real.Request` — submit insert/delete request
+- `TxBuilder.Real.Update` — consume requests, update root
+- `TxBuilder.Real.Retract` — cancel pending request
+- `TxBuilder.Real.Internal` — shared helpers, POSIX-to-slot
+  conversion (floor + ceiling), ExUnits estimation
+- `Balance` — fee estimation fixpoint, coin selection
+- `Proof` — MPF proof to on-chain ProofStep conversion
+- Unit tests for all tx builders (mock context)
 
-### Phase 5 — Deployment
+### Phase 3 — E2E Tests ✓
+
+- Devnet infrastructure (`Devnet.hs` — start/stop
+  `cardano-node` subprocess, genesis patching)
+- Test setup (`Setup.hs` — genesis signing key, addresses)
+- Provider E2E (`ProviderSpec` — LSQ queries)
+- Submitter E2E (`SubmitterSpec` — ADA transfer)
+- Full cage flow E2E (`CageSpec` — boot → request →
+  update → retract with real Plutus evaluation)
+- Optional aiken simulate integration
+- CI job running E2E on GitHub Actions
+
+### Phase 4 — Indexer + Persistence (next)
+
+- Wire `Indexer.Skeleton` to real ChainSync
+- Block processing: detect cage transactions, update
+  `State` and `TrieManager` automatically
+- Persistent `State` backend (RocksDB or LevelDB)
+- Persistent `TrieManager` backend (RocksDB)
+- Rollback handling via checkpoints
+
+### Phase 5 — HTTP Service
+
+- Servant HTTP API matching TypeScript interface
+- Endpoints: facts, proofs, tokens, requests
+- Swagger/OpenAPI documentation
+- Submitter with retry logic
+
+### Phase 6 — Deployment
+
 - Docker image via Nix
-- Deploy to plutimus.com alongside existing TypeScript service
-- Integration tests with Yaci devkit or local testnet
+- Deploy to plutimus.com
+- Integration with production Cardano node
 
 ## Open Questions
 
-1. **TxBuilder backend** — extract cardano-balance-tx from wallet
-   (proven but heavyweight) or write a lightweight custom
-   implementation (our transactions are simple)?
-2. **Signing** — use cardano-api signing or keep keys external
-   (signingless mode)?
-3. ~~**Indexer**~~ DECIDED — embed cardano-utxo-csmt, no Yaci,
-   no Ogmios. All node communication via node-to-client socket.
-4. **Multi-oracle** — the TypeScript version supports multiple
+1. **Persistent backend** — RocksDB (already have MPF backend)
+   or LevelDB (lighter) for State + TrieManager?
+2. **Signing** — keep signingless mode (external signing) or
+   add embedded key management?
+3. **Multi-oracle** — the TypeScript version supports multiple
    oracles. Same for Haskell?
+4. **UTxO index** — use cardano-utxo-csmt for full UTxO set
+   (needed for general coin selection) or keep relying on
+   LSQ address queries (sufficient for cage protocol)?
