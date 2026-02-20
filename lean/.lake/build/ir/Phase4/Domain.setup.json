@@ -1,7 +1,0 @@
-{"plugins": [],
- "package": "phase4-invariants",
- "options": {"autoImplicit": false},
- "name": "Phase4.Domain",
- "isModule": false,
- "importArts": {},
- "dynlibs": []}

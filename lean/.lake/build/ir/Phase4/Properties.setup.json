@@ -1,9 +1,0 @@
-{"plugins": [],
- "package": "phase4-invariants",
- "options": {"autoImplicit": false},
- "name": "Phase4.Properties",
- "isModule": false,
- "importArts":
- {"Phase4.Domain":
-  ["/code/cardano-mpfs-offchain-feat-phase4-indexer-persistence/lean/.lake/build/lib/lean/Phase4/Domain.olean"]},
- "dynlibs": []}
