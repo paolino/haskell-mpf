@@ -578,10 +578,118 @@ indexerSpecs scriptBytes = do
                             <> show events
 
     -- Test 7: batch update (2 requests)
-    -- Pending: updateToken with multiple requests
-    -- triggers a Plutus script failure on-chain.
-    -- Single-request updates work fine (test 3).
-    it "batch update (2 requests)" pending
+    it "batch update (2 requests)"
+        $ withE2E scriptBytes
+        $ \cfg ctx -> do
+            let pid = cagePolicyIdFromCfg cfg
+                sh = cfgScriptHash cfg
+                scriptAddr =
+                    cageAddrFromCfg cfg Testnet
+
+            -- Boot + register
+            bootAndRegister cfg ctx
+
+            tids <-
+                listTokens (tokens (state ctx))
+            let tid = head tids
+
+            -- Submit request 1
+            signedReq1 <-
+                buildAndSubmit ctx
+                    $ requestInsert
+                        (txBuilder ctx)
+                        tid
+                        "key1"
+                        "val1"
+                        genesisAddr
+
+            -- Register request 1 in state
+            let reqTxIn1 =
+                    TxIn
+                        (txIdTx signedReq1)
+                        (TxIx 0)
+                req1 =
+                    Request
+                        { requestToken = tid
+                        , requestOwner =
+                            keyHashFromSignKey
+                                genesisSignKey
+                        , requestKey = "key1"
+                        , requestValue = Insert "val1"
+                        , requestFee = Coin 1_000_000
+                        , requestSubmittedAt = 0
+                        }
+            putRequest
+                (requests (state ctx))
+                reqTxIn1
+                req1
+
+            -- Submit request 2
+            signedReq2 <-
+                buildAndSubmit ctx
+                    $ requestInsert
+                        (txBuilder ctx)
+                        tid
+                        "key2"
+                        "val2"
+                        genesisAddr
+
+            -- Register request 2 in state
+            let reqTxIn2 =
+                    TxIn
+                        (txIdTx signedReq2)
+                        (TxIx 0)
+                req2 =
+                    Request
+                        { requestToken = tid
+                        , requestOwner =
+                            keyHashFromSignKey
+                                genesisSignKey
+                        , requestKey = "key2"
+                        , requestValue = Insert "val2"
+                        , requestFee = Coin 1_000_000
+                        , requestSubmittedAt = 0
+                        }
+            putRequest
+                (requests (state ctx))
+                reqTxIn2
+                req2
+
+            -- Snapshot before update
+            preUtxos <-
+                snapshotCageUtxos
+                    (provider ctx)
+                    scriptAddr
+            genesisUtxos <-
+                queryUTxOs
+                    (provider ctx)
+                    genesisAddr
+
+            -- Submit update tx (consumes both
+            -- requests)
+            signedUpdate <-
+                buildAndSubmit ctx
+                    $ updateToken
+                        (txBuilder ctx)
+                        tid
+                        genesisAddr
+            let resolver =
+                    mkResolver
+                        preUtxos
+                        genesisUtxos
+
+            -- Detect events
+            let events =
+                    detectFromTx
+                        pid
+                        sh
+                        resolver
+                        signedUpdate
+            let updates =
+                    [ e
+                    | e@(CageUpdate{}) <- events
+                    ]
+            length updates `shouldBe` 1
 
     -- Test 8: persistent state survives reopen
     it "persistent state survives reopen"

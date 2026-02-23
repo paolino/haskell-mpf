@@ -282,8 +282,30 @@ updateTokenImpl cfg prov _st tm tid addr = do
     when False _ = pure ()
     when True act = act
 
--- | Process a single request: get proof steps,
--- then apply the operation to the trie.
+-- | Process a single request: apply the operation
+-- to the trie and get proof steps.
+--
+-- Proof timing depends on the operation:
+--
+-- * __Insert__: proof obtained /after/ the insert.
+--   The on-chain @mpf.insert@ checks
+--   @excluding(key, proof) == old_root@ and computes
+--   @including(key, value, proof) == new_root@.
+--   A membership proof of the key in the trie /with/
+--   the key satisfies both: @excluding@ strips the
+--   key to recover the old root, and @including@
+--   recomputes the new root.
+--
+-- * __Delete__: proof obtained /before/ the delete.
+--   The on-chain @mpf.delete@ checks
+--   @including(key, value, proof) == old_root@.
+--   The key must still be in the trie when the proof
+--   is generated.
+--
+-- * __Update__: proof obtained /before/ the update.
+--   The proof path depends only on the key, not the
+--   value, so either order works; we use before for
+--   consistency with delete.
 processRequest
     :: Trie IO
     -> (TxIn, TxOut ConwayEra)
@@ -298,17 +320,16 @@ processRequest trie (_txIn, txOut) = do
                     error
                         "processRequest: \
                         \invalid request datum"
-    -- Get proof before applying operation
-    mSteps <- getProofSteps trie key
-    let steps = fromMaybe [] mSteps
-    -- Apply operation
     case op of
         OpInsert v -> do
             _ <- insert trie key v
-            pure steps
+            mSteps <- getProofSteps trie key
+            pure (fromMaybe [] mSteps)
         OpDelete _ -> do
+            mSteps <- getProofSteps trie key
             _ <- Cardano.MPFS.Trie.delete trie key
-            pure steps
+            pure (fromMaybe [] mSteps)
         OpUpdate _ v -> do
+            mSteps <- getProofSteps trie key
             _ <- insert trie key v
-            pure steps
+            pure (fromMaybe [] mSteps)
