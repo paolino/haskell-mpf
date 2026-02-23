@@ -57,9 +57,11 @@ import Cardano.MPFS.E2E.Setup
     )
 import Cardano.MPFS.Indexer.CageEvent
     ( CageEvent (..)
-    , applyCageEvent
-    , detectFromTx
     , inversesOf
+    )
+import Cardano.MPFS.Indexer.CageFollower
+    ( applyCageEvent
+    , detectFromTx
     )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.State
