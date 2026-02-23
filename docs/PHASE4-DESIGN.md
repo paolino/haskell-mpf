@@ -442,23 +442,24 @@ applying `inv(op)` after `op` restores the original state:
 apply(inv(op), apply(op, state)) = state
 ```
 
-## Open questions
+## Design decisions (resolved)
 
-1. **Protocol params source** — Keep LSQ for protocol
-   params, or add a column family to cache them per epoch in
-   the shared RocksDB?
+1. **Protocol params source** — Keep LSQ. Params change at
+   most once per epoch and are only queried when building
+   transactions, not per-block.
 
-2. **By-address query** — cardano-utxo-csmt now has
-   by-address UTxO queries. Do we use that directly for
-   `Provider.queryUTxOs`, or do we maintain our own
-   address-indexed view?
+2. **Provider.queryUTxOs source** — Use cardano-utxo-csmt's
+   local UTxO index (`Query.getByAddress`). LSQ-based
+   `queryUTxOs` is unusable. The `Provider` gains a
+   dependency on cardano-utxo-csmt's query interface. The
+   N2C LSQ connection is only needed for protocol params
+   and tx evaluation.
 
-3. **Trie prefix efficiency** — Token-prefixed keys in a
-   shared column family vs. some other isolation strategy.
-   Need to verify RocksDB prefix bloom filters work well
-   with this approach.
+3. **Trie prefix efficiency** — Deferred. Prefixed keys in
+   shared column families work correctly. RocksDB prefix
+   bloom filter configuration is a future optimization
+   (see #40).
 
-4. **Transaction serialization** — The `RunTransaction`
-   MVar serializes all DB writes. Is this a bottleneck for
-   block processing throughput? Blocks arrive every ~20s on
-   mainnet, so probably fine, but worth measuring.
+4. **Transaction serialization** — Keep the MVar. Atomicity
+   is required. Block processing is well within the block
+   interval on both mainnet (20s) and devnet (0.1s).
