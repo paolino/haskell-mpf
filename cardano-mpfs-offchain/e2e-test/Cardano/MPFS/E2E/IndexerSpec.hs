@@ -17,6 +17,7 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as SBS
 import Data.Map.Strict qualified as Map
 import System.Environment (lookupEnv)
+import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec
     ( Spec
     , describe
@@ -83,7 +84,6 @@ import Cardano.MPFS.TxBuilder.Config
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
     ( cageAddrFromCfg
-    , cagePolicyIdFromCfg
     , computeScriptHash
     )
 import Cardano.MPFS.Types
@@ -143,8 +143,7 @@ indexerSpecs scriptBytes = do
     it "boot indexes token"
         $ withE2E scriptBytes
         $ \cfg ctx -> do
-            let pid = cagePolicyIdFromCfg cfg
-                sh = cfgScriptHash cfg
+            let sh = cfgScriptHash cfg
                 scriptAddr =
                     cageAddrFromCfg cfg Testnet
 
@@ -162,12 +161,11 @@ indexerSpecs scriptBytes = do
                     mkResolver preUtxos []
 
             -- Detect events
-            let events =
-                    detectFromTx
-                        pid
-                        sh
-                        resolver
-                        signedBoot
+            events <-
+                detectFromTx
+                    sh
+                    (pure . resolver)
+                    signedBoot
             length events `shouldBe` 1
             case events of
                 [CageBoot tid ts] -> do
@@ -199,8 +197,7 @@ indexerSpecs scriptBytes = do
     it "request indexes request"
         $ withE2E scriptBytes
         $ \cfg ctx -> do
-            let pid = cagePolicyIdFromCfg cfg
-                sh = cfgScriptHash cfg
+            let sh = cfgScriptHash cfg
                 scriptAddr =
                     cageAddrFromCfg cfg Testnet
 
@@ -231,12 +228,11 @@ indexerSpecs scriptBytes = do
                     mkResolver preUtxos []
 
             -- Detect events
-            let events =
-                    detectFromTx
-                        pid
-                        sh
-                        resolver
-                        signedReq
+            events <-
+                detectFromTx
+                    sh
+                    (pure . resolver)
+                    signedReq
             length events `shouldBe` 1
             case events of
                 [CageRequest txIn req] -> do
@@ -264,8 +260,7 @@ indexerSpecs scriptBytes = do
     it "update updates trie root"
         $ withE2E scriptBytes
         $ \cfg ctx -> do
-            let pid = cagePolicyIdFromCfg cfg
-                sh = cfgScriptHash cfg
+            let sh = cfgScriptHash cfg
                 scriptAddr =
                     cageAddrFromCfg cfg Testnet
 
@@ -331,12 +326,11 @@ indexerSpecs scriptBytes = do
                         genesisUtxos
 
             -- Detect events
-            let events =
-                    detectFromTx
-                        pid
-                        sh
-                        resolver
-                        signedUpdate
+            events <-
+                detectFromTx
+                    sh
+                    (pure . resolver)
+                    signedUpdate
 
             -- Should have CageUpdate
             let updates =
@@ -410,8 +404,7 @@ indexerSpecs scriptBytes = do
     it "retract removes request"
         $ withE2E scriptBytes
         $ \cfg ctx -> do
-            let pid = cagePolicyIdFromCfg cfg
-                sh = cfgScriptHash cfg
+            let sh = cfgScriptHash cfg
                 scriptAddr =
                     cageAddrFromCfg cfg Testnet
 
@@ -479,12 +472,11 @@ indexerSpecs scriptBytes = do
                         genesisUtxos
 
             -- Detect events
-            let events =
-                    detectFromTx
-                        pid
-                        sh
-                        resolver
-                        signedRetract
+            events <-
+                detectFromTx
+                    sh
+                    (pure . resolver)
+                    signedRetract
             let retracts =
                     [ e
                     | e@(CageRetract _) <- events
@@ -515,8 +507,7 @@ indexerSpecs scriptBytes = do
     it "inverse roundtrip"
         $ withE2E scriptBytes
         $ \cfg ctx -> do
-            let pid = cagePolicyIdFromCfg cfg
-                sh = cfgScriptHash cfg
+            let sh = cfgScriptHash cfg
                 scriptAddr =
                     cageAddrFromCfg cfg Testnet
 
@@ -534,12 +525,11 @@ indexerSpecs scriptBytes = do
                         genesisAddr
             let resolver =
                     mkResolver preUtxos []
-                events =
-                    detectFromTx
-                        pid
-                        sh
-                        resolver
-                        signedBoot
+            events <-
+                detectFromTx
+                    sh
+                    (pure . resolver)
+                    signedBoot
             case events of
                 [evt@(CageBoot tid _ts)] -> do
                     -- Compute inverse BEFORE apply
@@ -583,8 +573,7 @@ indexerSpecs scriptBytes = do
     it "batch update (2 requests)"
         $ withE2E scriptBytes
         $ \cfg ctx -> do
-            let pid = cagePolicyIdFromCfg cfg
-                sh = cfgScriptHash cfg
+            let sh = cfgScriptHash cfg
                 scriptAddr =
                     cageAddrFromCfg cfg Testnet
 
@@ -681,12 +670,11 @@ indexerSpecs scriptBytes = do
                         genesisUtxos
 
             -- Detect events
-            let events =
-                    detectFromTx
-                        pid
-                        sh
-                        resolver
-                        signedUpdate
+            events <-
+                detectFromTx
+                    sh
+                    (pure . resolver)
+                    signedUpdate
             let updates =
                     [ e
                     | e@(CageUpdate{}) <- events
@@ -697,8 +685,7 @@ indexerSpecs scriptBytes = do
     it "persistent state survives reopen"
         $ withE2E scriptBytes
         $ \cfg ctx -> do
-            let pid = cagePolicyIdFromCfg cfg
-                sh = cfgScriptHash cfg
+            let sh = cfgScriptHash cfg
                 scriptAddr =
                     cageAddrFromCfg cfg Testnet
 
@@ -714,12 +701,11 @@ indexerSpecs scriptBytes = do
                         genesisAddr
             let resolver =
                     mkResolver preUtxos []
-                events =
-                    detectFromTx
-                        pid
-                        sh
-                        resolver
-                        signedBoot
+            events <-
+                detectFromTx
+                    sh
+                    (pure . resolver)
+                    signedBoot
             mapM_
                 ( applyCageEvent
                     (state ctx)
@@ -760,21 +746,23 @@ withE2E
     -> IO a
 withE2E scriptBytes action = do
     gDir <- genesisDir
-    withCardanoNode gDir $ \sock startMs -> do
-        let cfg = cageCfg scriptBytes startMs
-            appCfg =
-                AppConfig
-                    { networkMagic =
-                        devnetMagic
-                    , socketPath = sock
-                    , channelCapacity = 16
-                    , cageConfig = cfg
-                    }
-        withApplication appCfg $ \ctx -> do
-            _ <-
-                queryProtocolParams
-                    (provider ctx)
-            action cfg ctx
+    withCardanoNode gDir $ \sock startMs ->
+        withSystemTempDirectory "mpfs-e2e" $ \tmpDir -> do
+            let cfg = cageCfg scriptBytes startMs
+                appCfg =
+                    AppConfig
+                        { networkMagic =
+                            devnetMagic
+                        , socketPath = sock
+                        , dbPath = tmpDir
+                        , channelCapacity = 16
+                        , cageConfig = cfg
+                        }
+            withApplication appCfg $ \ctx -> do
+                _ <-
+                    queryProtocolParams
+                        (provider ctx)
+                action cfg ctx
 
 -- ---------------------------------------------------------
 -- Helpers
@@ -833,8 +821,7 @@ mkResolver cageUtxos walletUtxos txIn =
 bootAndRegister
     :: CageConfig -> Context IO -> IO ()
 bootAndRegister cfg ctx = do
-    let pid = cagePolicyIdFromCfg cfg
-        sh = cfgScriptHash cfg
+    let sh = cfgScriptHash cfg
         scriptAddr =
             cageAddrFromCfg cfg Testnet
 
@@ -852,12 +839,11 @@ bootAndRegister cfg ctx = do
     -- Detect and apply
     let resolver =
             mkResolver cageUtxos genesisUtxos
-        events =
-            detectFromTx
-                pid
-                sh
-                resolver
-                signedBoot
+    events <-
+        detectFromTx
+            sh
+            (pure . resolver)
+            signedBoot
     mapM_
         ( applyCageEvent
             (state ctx)

@@ -182,6 +182,7 @@ test-suite e2e-tests
     , microlens
     , ouroboros-network-api
     , process
+    , temporary
     , text
     , time
     , unix
