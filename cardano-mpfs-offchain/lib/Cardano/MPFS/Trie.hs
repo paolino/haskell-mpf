@@ -36,6 +36,20 @@ data TrieManager m = TrieManager
         -> (Trie m -> m a)
         -> m a
     -- ^ Run an action with access to a token's trie
+    , withSpeculativeTrie
+        :: forall a
+         . TokenId
+        -> ( forall n
+              . Monad n
+             => Trie n
+             -> n a
+           )
+        -> m a
+    -- ^ Run a read-your-writes session whose
+    -- mutations are discarded at the end. The
+    -- rank-2 callback ensures the action cannot
+    -- perform arbitrary effects — only trie
+    -- operations and pure computation.
     , createTrie :: TokenId -> m ()
     -- ^ Create a new empty trie for a token
     , deleteTrie :: TokenId -> m ()

@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 
 -- |
 -- Module      : Cardano.MPFS.TrieManagerSpec
@@ -126,3 +127,53 @@ trieManagerSpec newTM = do
         tm <- newTM
         deleteTrie tm tokenA
         pure ()
+
+    it "speculative ops don't persist" $ do
+        tm <- newTM
+        createTrie tm tokenA
+        -- Insert speculatively
+        void
+            $ withSpeculativeTrie tm tokenA
+            $ \trie -> insert trie "k" "v"
+        -- Real trie should still be empty
+        withTrie tm tokenA $ \trie -> do
+            root <- getRoot trie
+            unRoot root `shouldBe` B.empty
+
+    it "speculative root matches real root" $ do
+        tm <- newTM
+        createTrie tm tokenA
+        -- Insert via real trie
+        realRoot <- withTrie tm tokenA $ \trie ->
+            insert trie "a" "1"
+        -- Insert same key via speculation
+        specRoot <-
+            withSpeculativeTrie tm tokenA
+                $ \trie -> insert trie "a" "1"
+        unRoot specRoot
+            `shouldBe` unRoot realRoot
+
+    it "speculative read-your-writes" $ do
+        tm <- newTM
+        createTrie tm tokenA
+        createTrie tm tokenB
+        -- Do insert A, insert B, delete A
+        -- speculatively on tokenA
+        specRoot <-
+            withSpeculativeTrie tm tokenA
+                $ \trie -> do
+                    void $ insert trie "a" "1"
+                    void $ insert trie "b" "2"
+                    void
+                        $ Cardano.MPFS.Trie.delete
+                            trie
+                            "a"
+                    getRoot trie
+        -- Do the same via real trie on tokenB
+        realRoot <- withTrie tm tokenB $ \trie -> do
+            void $ insert trie "a" "1"
+            void $ insert trie "b" "2"
+            void $ Cardano.MPFS.Trie.delete trie "a"
+            getRoot trie
+        unRoot specRoot
+            `shouldBe` unRoot realRoot

@@ -1,5 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- |
 -- Module      : Cardano.MPFS.Trie.Persistent
@@ -44,6 +46,7 @@ import Database.KV.Database
 import Database.KV.Transaction
     ( Transaction
     , query
+    , runSpeculation
     , runTransactionUnguarded
     )
 import Database.RocksDB
@@ -125,6 +128,12 @@ mkPersistentTrieManager db nodesCF kvCF = do
         TrieManager
             { withTrie =
                 persistentWithTrie
+                    db
+                    nodesCF
+                    kvCF
+                    knownRef
+            , withSpeculativeTrie =
+                persistentWithSpeculativeTrie
                     db
                     nodesCF
                     kvCF
@@ -217,6 +226,46 @@ persistentWithTrie db nodesCF kvCF knownRef tid action = do
         else
             error
                 $ "Trie not found: " ++ show tid
+
+-- | Run a speculative (dry-run) session against a
+-- token's trie. Reads from a snapshot and buffers
+-- writes for read-your-writes, but discards all
+-- mutations at the end.
+persistentWithSpeculativeTrie
+    :: DB
+    -> ColumnFamily
+    -> ColumnFamily
+    -> IORef (Set TokenId)
+    -> TokenId
+    -> ( forall n
+          . Monad n
+         => Trie n
+         -> n a
+       )
+    -> IO a
+persistentWithSpeculativeTrie
+    db
+    nodesCF
+    kvCF
+    knownRef
+    tid
+    action = do
+        known <- readIORef knownRef
+        if Set.member tid known
+            then do
+                let pfx = tokenPrefix tid
+                    database =
+                        mkPrefixedTrieDB
+                            db
+                            nodesCF
+                            kvCF
+                            pfx
+                runSpeculation
+                    database
+                    (action mkTransactionalTrie)
+            else
+                error
+                    $ "Trie not found: " ++ show tid
 
 -- | Create a new empty trie for a token. Previous
 -- data is deleted if the token already exists.
@@ -392,6 +441,123 @@ mkPersistentTrie database =
         , getProofSteps =
             persistentGetProofSteps database
         }
+
+-- | A 'Trie' whose operations run directly in
+-- the 'Transaction' monad without committing.
+-- Used by 'runSpeculation' for dry-run sessions.
+mkTransactionalTrie
+    :: Trie
+        ( Transaction
+            IO
+            ColumnFamily
+            (MPFStandalone HexKey MPFHash MPFHash)
+            BatchOp
+        )
+mkTransactionalTrie =
+    Trie
+        { insert = transactionalInsert
+        , delete = transactionalDelete
+        , lookup = transactionalLookup
+        , getRoot = persistentGetRootT
+        , getProof = transactionalGetProof
+        , getProofSteps =
+            transactionalGetProofSteps
+        }
+
+transactionalInsert
+    :: ByteString
+    -> ByteString
+    -> Transaction
+        IO
+        ColumnFamily
+        (MPFStandalone HexKey MPFHash MPFHash)
+        BatchOp
+        Root
+transactionalInsert k v = do
+    inserting
+        fromHexKVIdentity
+        mpfHashing
+        MPFStandaloneKVCol
+        MPFStandaloneMPFCol
+        (byteStringToHexKey (hashBS k))
+        (mkMPFHash v)
+    persistentGetRootT
+
+transactionalDelete
+    :: ByteString
+    -> Transaction
+        IO
+        ColumnFamily
+        (MPFStandalone HexKey MPFHash MPFHash)
+        BatchOp
+        Root
+transactionalDelete k = do
+    deleting
+        fromHexKVIdentity
+        mpfHashing
+        MPFStandaloneKVCol
+        MPFStandaloneMPFCol
+        (byteStringToHexKey (hashBS k))
+    persistentGetRootT
+
+transactionalLookup
+    :: ByteString
+    -> Transaction
+        IO
+        ColumnFamily
+        (MPFStandalone HexKey MPFHash MPFHash)
+        BatchOp
+        (Maybe ByteString)
+transactionalLookup k = do
+    let hexKey =
+            byteStringToHexKey (hashBS k)
+    mProof <-
+        mkMPFInclusionProof
+            fromHexKVIdentity
+            mpfHashing
+            MPFStandaloneMPFCol
+            hexKey
+    pure $ case mProof of
+        Nothing -> Nothing
+        Just _ -> Just (hashBS k)
+
+transactionalGetProof
+    :: ByteString
+    -> Transaction
+        IO
+        ColumnFamily
+        (MPFStandalone HexKey MPFHash MPFHash)
+        BatchOp
+        (Maybe Proof)
+transactionalGetProof k = do
+    let hexKey =
+            byteStringToHexKey (hashBS k)
+    mProof <-
+        mkMPFInclusionProof
+            fromHexKVIdentity
+            mpfHashing
+            MPFStandaloneMPFCol
+            hexKey
+    pure $ fmap (Proof . serializeProof) mProof
+
+transactionalGetProofSteps
+    :: ByteString
+    -> Transaction
+        IO
+        ColumnFamily
+        (MPFStandalone HexKey MPFHash MPFHash)
+        BatchOp
+        (Maybe [ProofStep])
+transactionalGetProofSteps k = do
+    let hexKey =
+            byteStringToHexKey (hashBS k)
+    mProof <-
+        mkMPFInclusionProof
+            fromHexKVIdentity
+            mpfHashing
+            MPFStandaloneMPFCol
+            hexKey
+    pure $ fmap toProofSteps mProof
 
 persistentInsert
     :: Database
