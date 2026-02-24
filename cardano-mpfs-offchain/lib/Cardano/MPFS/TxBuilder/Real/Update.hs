@@ -126,12 +126,15 @@ updateTokenImpl cfg prov _st tm tid addr = do
         walletUtxos of
         [] -> error "updateToken: no UTxOs"
         (u : _) -> pure u
-    -- 5. Compute proofs and apply operations
-    proofs <- withTrie tm tid $ \trie ->
-        mapM (processRequest trie) reqUtxos
-    -- 6. Get new root
-    newRoot <- withTrie tm tid $ \trie ->
-        getRoot trie
+    -- 5. Compute proofs speculatively (no mutation)
+    (proofs, newRoot) <-
+        withSpeculativeTrie tm tid $ \trie -> do
+            ps <-
+                mapM
+                    (processRequest trie)
+                    reqUtxos
+            r <- getRoot trie
+            pure (ps, r)
     -- 7. Build new state output
     let oldState = case extractCageDatum stateOut of
             Just (StateDatum s) -> s
@@ -307,9 +310,10 @@ updateTokenImpl cfg prov _st tm tid addr = do
 --   value, so either order works; we use before for
 --   consistency with delete.
 processRequest
-    :: Trie IO
+    :: Monad m
+    => Trie m
     -> (TxIn, TxOut ConwayEra)
-    -> IO [ProofStep]
+    -> m [ProofStep]
 processRequest trie (_txIn, txOut) = do
     let OnChainRequest
             { requestKey = key

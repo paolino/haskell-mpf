@@ -186,6 +186,10 @@ dummyTrieManager =
     TrieManager
         { withTrie = \_ _ ->
             error "dummyTrieManager: withTrie"
+        , withSpeculativeTrie = \_ _ ->
+            error
+                "dummyTrieManager: \
+                \withSpeculativeTrie"
         , createTrie = \_ ->
             error "dummyTrieManager: createTrie"
         , deleteTrie = \_ ->

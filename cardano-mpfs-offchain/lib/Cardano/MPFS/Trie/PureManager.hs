@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 -- |
 -- Module      : Cardano.MPFS.Trie.PureManager
 -- Description : Pure in-memory TrieManager
@@ -42,6 +44,8 @@ mkPureTrieManager = do
     pure
         TrieManager
             { withTrie = pureWithTrie ref
+            , withSpeculativeTrie =
+                pureWithSpeculativeTrie ref
             , createTrie = pureCreateTrie ref
             , deleteTrie = pureDeleteTrie ref
             }
@@ -61,6 +65,24 @@ pureWithTrie ref tid action = do
                 $ "Trie not found: " ++ show tid
         Just dbRef ->
             action (mkPureTrieFromRef dbRef)
+
+-- | Run a speculative session on a copy of the
+-- trie. The copy is discarded after the action.
+pureWithSpeculativeTrie
+    :: IORef (Map TokenId (IORef MPFInMemoryDB))
+    -> TokenId
+    -> (forall n. Monad n => Trie n -> n a)
+    -> IO a
+pureWithSpeculativeTrie ref tid action = do
+    tries <- readIORef ref
+    case Map.lookup tid tries of
+        Nothing ->
+            error
+                $ "Trie not found: " ++ show tid
+        Just dbRef -> do
+            db <- readIORef dbRef
+            copyRef <- newIORef db
+            action (mkPureTrieFromRef copyRef)
 
 -- | Create a new empty trie for a token.
 pureCreateTrie
