@@ -140,6 +140,8 @@ test-suite unit-tests
     , plutus-tx
     , QuickCheck                             >=2.14 && <2.18
     , rocksdb-haskell-jprupp
+    , rocksdb-kv-transactions
+    , rocksdb-kv-transactions:kv-transactions
     , temporary
     , text
 
@@ -150,6 +152,7 @@ test-suite unit-tests
     Cardano.MPFS.Indexer.CageFollowerSpec
     Cardano.MPFS.Indexer.CodecsSpec
     Cardano.MPFS.Indexer.InverseSpec
+    Cardano.MPFS.Indexer.PersistentSpec
     Cardano.MPFS.OnChainSpec
     Cardano.MPFS.ProofSpec
     Cardano.MPFS.StateSpec
