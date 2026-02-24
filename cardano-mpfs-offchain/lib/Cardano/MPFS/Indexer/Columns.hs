@@ -17,6 +17,9 @@ module Cardano.MPFS.Indexer.Columns
     ( -- * Column selector
       AllColumns (..)
 
+      -- * Trie registry
+    , TrieStatus (..)
+
       -- * Checkpoint type
     , CageCheckpoint (..)
     ) where
@@ -39,6 +42,13 @@ import Cardano.MPFS.Types
     , TokenState
     , TxIn
     )
+
+-- | Visibility status of a token's trie in the
+-- persistent registry. Starts as 'TrieVisible';
+-- will gain a 'TrieHidden' constructor for burn
+-- rollback (issue #34).
+data TrieStatus = TrieVisible
+    deriving stock (Eq, Show)
 
 -- | Chain sync checkpoint stored in the cage-cfg
 -- column family.
@@ -76,6 +86,10 @@ data AllColumns x where
     -- per-token tries. Keys are token-prefixed.
     TrieKV
         :: AllColumns (KV ByteString ByteString)
+    -- | Trie metadata registry: tracks which tokens
+    -- have persistent tries.
+    TrieMetadata
+        :: AllColumns (KV TokenId TrieStatus)
 
 instance GEq AllColumns where
     geq CageTokens CageTokens = Just Refl
@@ -83,6 +97,7 @@ instance GEq AllColumns where
     geq CageCfg CageCfg = Just Refl
     geq TrieNodes TrieNodes = Just Refl
     geq TrieKV TrieKV = Just Refl
+    geq TrieMetadata TrieMetadata = Just Refl
     geq _ _ = Nothing
 
 instance GCompare AllColumns where
@@ -96,6 +111,9 @@ instance GCompare AllColumns where
     gcompare CageCfg _ = GLT
     gcompare _ CageCfg = GGT
     gcompare TrieNodes TrieNodes = GEQ
-    gcompare TrieNodes TrieKV = GLT
-    gcompare TrieKV TrieNodes = GGT
+    gcompare TrieNodes _ = GLT
+    gcompare _ TrieNodes = GGT
     gcompare TrieKV TrieKV = GEQ
+    gcompare TrieKV TrieMetadata = GLT
+    gcompare TrieMetadata TrieKV = GGT
+    gcompare TrieMetadata TrieMetadata = GEQ

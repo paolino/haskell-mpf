@@ -5,7 +5,11 @@
 -- Module      : Cardano.MPFS.TrieManagerSpec
 -- Description : Tests for the TrieManager interface
 -- License     : Apache-2.0
-module Cardano.MPFS.TrieManagerSpec (spec) where
+module Cardano.MPFS.TrieManagerSpec
+    ( spec
+    , tokenA
+    , tokenB
+    ) where
 
 import Data.ByteString qualified as B
 import Data.ByteString.Short qualified as SBS

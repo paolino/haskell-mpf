@@ -28,6 +28,7 @@ module Cardano.MPFS.Indexer.Codecs
     , requestPrism
     , unitPrism
     , checkpointPrism
+    , trieStatusPrism
     , rawBytesPrism
     ) where
 
@@ -59,6 +60,7 @@ import Codec.CBOR.Read (deserialiseFromBytes)
 import Codec.CBOR.Write (toStrictByteString)
 import Control.Lens (Prism', prism')
 import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
 import Data.ByteString.Short qualified as SBS
 import Database.KV.Transaction
@@ -71,6 +73,7 @@ import Database.KV.Transaction
 import Cardano.MPFS.Indexer.Columns
     ( AllColumns (..)
     , CageCheckpoint (..)
+    , TrieStatus (..)
     )
 import Cardano.MPFS.Types
     ( BlockId (..)
@@ -110,6 +113,11 @@ allCodecs =
             :=> Codecs
                 { keyCodec = rawBytesPrism
                 , valueCodec = rawBytesPrism
+                }
+        , TrieMetadata
+            :=> Codecs
+                { keyCodec = tokenIdPrism
+                , valueCodec = trieStatusPrism
                 }
         ]
 
@@ -232,6 +240,18 @@ checkpointPrism = prism' enc dec
 -- decoding — bytes pass through unchanged.
 rawBytesPrism :: Prism' ByteString ByteString
 rawBytesPrism = prism' id Just
+
+-- | Encode/decode 'TrieStatus' as a single tag
+-- byte. 0 = 'TrieVisible'. Room for future
+-- constructors (e.g. 1 = Hidden for burn rollback).
+trieStatusPrism :: Prism' ByteString TrieStatus
+trieStatusPrism = prism' enc dec
+  where
+    enc TrieVisible = BS.singleton 0
+    dec bs = case BS.uncons bs of
+        Just (0, rest)
+            | BS.null rest -> Just TrieVisible
+        _ -> Nothing
 
 -- --------------------------------------------------------
 -- Ledger serialization bridge

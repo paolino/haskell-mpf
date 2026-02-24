@@ -88,7 +88,7 @@ dbConfig =
 -- | Column family names and configs for the cage
 -- indexer. Order must match the 'AllColumns' GADT
 -- constructor order: CageTokens, CageRequests,
--- CageCfg, TrieNodes, TrieKV.
+-- CageCfg, TrieNodes, TrieKV, TrieMetadata.
 cageColumnFamilies :: [(String, Config)]
 cageColumnFamilies =
     [ ("tokens", dbConfig)
@@ -96,6 +96,7 @@ cageColumnFamilies =
     , ("cage-cfg", dbConfig)
     , ("trie-nodes", dbConfig)
     , ("trie-kv", dbConfig)
+    , ("trie-meta", dbConfig)
     ]
 
 -- | Run an action with a fully wired 'Context IO'.
@@ -123,11 +124,12 @@ withApplication cfg action =
             -- Extract trie column families (4th and 5th)
             case drop 3 (columnFamilies db) of
                 (nodesCF : kvCF : _) -> do
-                    tm <-
-                        mkPersistentTrieManager
-                            db
-                            nodesCF
-                            kvCF
+                    let tm =
+                            mkPersistentTrieManager
+                                db
+                                nodesCF
+                                kvCF
+                                rt
                     idx <- mkSkeletonIndexer
                     lsqCh <-
                         newLSQChannel
@@ -166,5 +168,5 @@ withApplication cfg action =
                     pure result
                 _ ->
                     error
-                        "Expected at least 5 \
+                        "Expected at least 6 \
                         \column families"

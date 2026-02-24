@@ -17,7 +17,6 @@
 module Cardano.MPFS.Trie.Persistent
     ( -- * Construction
       mkPersistentTrieManager
-    , withPersistentTrieManager
     ) where
 
 import Control.Lens (Prism')
@@ -25,14 +24,7 @@ import Control.Monad (when)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as SBS
-import Data.IORef
-    ( IORef
-    , modifyIORef'
-    , newIORef
-    , readIORef
-    )
-import Data.Set (Set)
-import Data.Set qualified as Set
+import Data.Maybe (isJust)
 
 import Database.KV.Database
     ( Codecs (..)
@@ -44,15 +36,16 @@ import Database.KV.Database
     , fromPairList
     )
 import Database.KV.Transaction
-    ( Transaction
+    ( RunTransaction (..)
+    , Transaction
     , query
     , runSpeculation
     , runTransactionUnguarded
     )
+import Database.KV.Transaction qualified as Tx
 import Database.RocksDB
     ( BatchOp (..)
     , ColumnFamily
-    , Config (..)
     , DB (..)
     , createIterator
     , destroyIterator
@@ -63,7 +56,6 @@ import Database.RocksDB
     , iterPrev
     , iterSeek
     , iterValid
-    , withDBCF
     , write
     )
 
@@ -95,6 +87,10 @@ import MPF.Test.Lib
     , mpfHashCodecs
     )
 
+import Cardano.MPFS.Indexer.Columns
+    ( AllColumns (..)
+    , TrieStatus (..)
+    )
 import Cardano.MPFS.OnChain (ProofStep)
 import Cardano.MPFS.Proof
     ( serializeProof
@@ -113,7 +109,9 @@ import Cardano.MPFS.Types
 
 -- | Create a persistent 'TrieManager IO' backed by
 -- shared RocksDB column families. Each token's trie
--- data is isolated via key prefixing.
+-- data is isolated via key prefixing. The token
+-- registry is persisted in the 'TrieMetadata'
+-- column, surviving process restarts.
 mkPersistentTrieManager
     :: DB
     -- ^ Shared RocksDB handle
@@ -121,76 +119,35 @@ mkPersistentTrieManager
     -- ^ Column family for trie nodes
     -> ColumnFamily
     -- ^ Column family for trie key-value pairs
-    -> IO (TrieManager IO)
-mkPersistentTrieManager db nodesCF kvCF = do
-    knownRef <- newIORef (Set.empty :: Set TokenId)
-    pure
-        TrieManager
-            { withTrie =
-                persistentWithTrie
-                    db
-                    nodesCF
-                    kvCF
-                    knownRef
-            , withSpeculativeTrie =
-                persistentWithSpeculativeTrie
-                    db
-                    nodesCF
-                    kvCF
-                    knownRef
-            , createTrie =
-                persistentCreateTrie
-                    db
-                    nodesCF
-                    kvCF
-                    knownRef
-            , deleteTrie =
-                persistentDeleteTrie
-                    db
-                    nodesCF
-                    kvCF
-                    knownRef
-            }
-
--- | Bracket that opens a RocksDB database, creates
--- the @nodes@ and @kv@ column families, builds a
--- persistent 'TrieManager IO', runs the action, and
--- closes the database.
-withPersistentTrieManager
-    :: FilePath
-    -> (TrieManager IO -> IO a)
-    -> IO a
-withPersistentTrieManager path action =
-    withDBCF
-        path
-        defaultConfig
-        [ ("nodes", defaultConfig)
-        , ("kv", defaultConfig)
-        ]
-        $ \db@DB{columnFamilies} ->
-            case columnFamilies of
-                [nodesCF, kvCF] -> do
-                    mgr <-
-                        mkPersistentTrieManager
-                            db
-                            nodesCF
-                            kvCF
-                    action mgr
-                _ ->
-                    error
-                        "withPersistentTrieManager: \
-                        \expected 2 column families"
-
--- | Default RocksDB configuration.
-defaultConfig :: Config
-defaultConfig =
-    Config
-        { createIfMissing = True
-        , errorIfExists = False
-        , paranoidChecks = False
-        , maxFiles = Nothing
-        , prefixLength = Nothing
-        , bloomFilter = False
+    -> RunTransaction IO cf AllColumns op
+    -- ^ Transaction runner for the registry
+    -> TrieManager IO
+mkPersistentTrieManager db nodesCF kvCF rt =
+    TrieManager
+        { withTrie =
+            persistentWithTrie
+                db
+                nodesCF
+                kvCF
+                rt
+        , withSpeculativeTrie =
+            persistentWithSpeculativeTrie
+                db
+                nodesCF
+                kvCF
+                rt
+        , createTrie =
+            persistentCreateTrie
+                db
+                nodesCF
+                kvCF
+                rt
+        , deleteTrie =
+            persistentDeleteTrie
+                db
+                nodesCF
+                kvCF
+                rt
         }
 
 -- | Serialize a 'TokenId' to a prefix byte string.
@@ -202,19 +159,20 @@ tokenPrefix (TokenId (AssetName sbs)) =
 
 -- | Run an action with a token's trie. Creates a
 -- prefixed 'Database' for the token and wraps MPF
--- operations.
+-- operations. Errors if the token is not registered.
 persistentWithTrie
     :: DB
     -> ColumnFamily
     -> ColumnFamily
-    -> IORef (Set TokenId)
+    -> RunTransaction IO cf AllColumns op
     -> TokenId
     -> (Trie IO -> IO a)
     -> IO a
-persistentWithTrie db nodesCF kvCF knownRef tid action = do
-    known <- readIORef knownRef
-    if Set.member tid known
-        then do
+persistentWithTrie db nodesCF kvCF rt tid action = do
+    mStatus <-
+        runTransaction rt $ Tx.query TrieMetadata tid
+    case mStatus of
+        Just TrieVisible -> do
             let pfx = tokenPrefix tid
                 database =
                     mkPrefixedTrieDB
@@ -223,7 +181,7 @@ persistentWithTrie db nodesCF kvCF knownRef tid action = do
                         kvCF
                         pfx
             action (mkPersistentTrie database)
-        else
+        _ ->
             error
                 $ "Trie not found: " ++ show tid
 
@@ -235,7 +193,7 @@ persistentWithSpeculativeTrie
     :: DB
     -> ColumnFamily
     -> ColumnFamily
-    -> IORef (Set TokenId)
+    -> RunTransaction IO cf AllColumns op
     -> TokenId
     -> ( forall n
           . Monad n
@@ -247,12 +205,14 @@ persistentWithSpeculativeTrie
     db
     nodesCF
     kvCF
-    knownRef
+    rt
     tid
     action = do
-        known <- readIORef knownRef
-        if Set.member tid known
-            then do
+        mStatus <-
+            runTransaction rt
+                $ Tx.query TrieMetadata tid
+        case mStatus of
+            Just TrieVisible -> do
                 let pfx = tokenPrefix tid
                     database =
                         mkPrefixedTrieDB
@@ -263,7 +223,7 @@ persistentWithSpeculativeTrie
                 runSpeculation
                     database
                     (action mkTransactionalTrie)
-            else
+            _ ->
                 error
                     $ "Trie not found: " ++ show tid
 
@@ -273,15 +233,16 @@ persistentCreateTrie
     :: DB
     -> ColumnFamily
     -> ColumnFamily
-    -> IORef (Set TokenId)
+    -> RunTransaction IO cf AllColumns op
     -> TokenId
     -> IO ()
-persistentCreateTrie db nodesCF kvCF knownRef tid = do
-    known <- readIORef knownRef
-    -- Delete existing data if present
-    when (Set.member tid known)
+persistentCreateTrie db nodesCF kvCF rt tid = do
+    mStatus <-
+        runTransaction rt $ Tx.query TrieMetadata tid
+    when (isJust mStatus)
         $ deleteAllWithPrefix db nodesCF kvCF pfx
-    modifyIORef' knownRef (Set.insert tid)
+    runTransaction rt
+        $ Tx.insert TrieMetadata tid TrieVisible
   where
     pfx = tokenPrefix tid
 
@@ -290,12 +251,12 @@ persistentDeleteTrie
     :: DB
     -> ColumnFamily
     -> ColumnFamily
-    -> IORef (Set TokenId)
+    -> RunTransaction IO cf AllColumns op
     -> TokenId
     -> IO ()
-persistentDeleteTrie db nodesCF kvCF knownRef tid = do
+persistentDeleteTrie db nodesCF kvCF rt tid = do
     deleteAllWithPrefix db nodesCF kvCF (tokenPrefix tid)
-    modifyIORef' knownRef (Set.delete tid)
+    runTransaction rt $ Tx.delete TrieMetadata tid
 
 -- --------------------------------------------------------
 -- Prefixed Database construction
