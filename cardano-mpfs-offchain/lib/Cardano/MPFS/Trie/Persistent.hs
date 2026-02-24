@@ -266,37 +266,40 @@ mkPrefixedTrieDB
         (MPFStandalone HexKey MPFHash MPFHash)
         BatchOp
 mkPrefixedTrieDB db nodesCF kvCF pfx =
-    Database
-        { valueAt = \cf key ->
-            getCF db cf (pfx <> key)
-        , applyOps = write db
-        , mkOperation = \cf key mv ->
-            case mv of
-                Just v -> PutCF cf (pfx <> key) v
-                Nothing -> DelCF cf (pfx <> key)
-        , columns =
-            fromPairList
-                [ MPFStandaloneKVCol
-                    :=> Column
-                        { family = kvCF
-                        , codecs =
-                            Codecs
-                                { keyCodec =
-                                    hexKeyPrism
-                                , valueCodec =
-                                    isoMPFHash
+    let trieDB =
+            Database
+                { valueAt = \cf key ->
+                    getCF db cf (pfx <> key)
+                , applyOps = write db
+                , mkOperation = \cf key mv ->
+                    case mv of
+                        Just v -> PutCF cf (pfx <> key) v
+                        Nothing -> DelCF cf (pfx <> key)
+                , columns =
+                    fromPairList
+                        [ MPFStandaloneKVCol
+                            :=> Column
+                                { family = kvCF
+                                , codecs =
+                                    Codecs
+                                        { keyCodec =
+                                            hexKeyPrism
+                                        , valueCodec =
+                                            isoMPFHash
+                                        }
                                 }
-                        }
-                , MPFStandaloneMPFCol
-                    :=> Column
-                        { family = nodesCF
-                        , codecs =
-                            mpfCodecs isoMPFHash
-                        }
-                ]
-        , newIterator = \cf ->
-            mkPrefixedIterator db cf pfx
-        }
+                        , MPFStandaloneMPFCol
+                            :=> Column
+                                { family = nodesCF
+                                , codecs =
+                                    mpfCodecs isoMPFHash
+                                }
+                        ]
+                , newIterator = \cf ->
+                    mkPrefixedIterator db cf pfx
+                , withSnapshot = \f -> f trieDB
+                }
+    in  trieDB
   where
     isoMPFHash :: Prism' ByteString MPFHash
     isoMPFHash = mpfValueCodec mpfHashCodecs

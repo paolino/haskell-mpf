@@ -80,6 +80,7 @@ library
     , rocksdb-kv-transactions                  >=0.1  && <0.2
     , rocksdb-kv-transactions:kv-transactions
     , transformers                             >=0.6  && <0.7
+    , unliftio                                 >=0.2  && <0.3
 
   hs-source-dirs:   lib
   default-language: Haskell2010
