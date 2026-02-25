@@ -120,8 +120,7 @@ foldBootstrapEntries fp onHeader onEntry = do
     decodeHdr = do
         decodeListLenOf 3
         slot <- decodeWord64
-        mbHash <- decodeMaybeBytes
-        pure (BootstrapHeader slot mbHash)
+        BootstrapHeader slot <$> decodeMaybeBytes
     go remaining =
         case deserialiseFromBytes
             decodeEntryOrBreak
