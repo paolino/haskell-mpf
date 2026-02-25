@@ -23,7 +23,6 @@ import Test.Hspec
     , describe
     , expectationFailure
     , it
-    , pending
     , runIO
     , shouldBe
     , shouldSatisfy
@@ -62,6 +61,8 @@ import Cardano.MPFS.Indexer.CageEvent
     )
 import Cardano.MPFS.Indexer.CageFollower
     ( applyCageEvent
+    , applyCageInverses
+    , computeInverse
     , detectFromTx
     )
 import Cardano.MPFS.Provider (Provider (..))
@@ -500,10 +501,154 @@ indexerSpecs scriptBytes = do
                         $ "expected CageRetract, got: "
                             <> show events
 
-    -- Test 5: burn removes token (pending)
-    it "burn removes token" pending
+    -- Test 5: burn removes token
+    it "burn removes token"
+        $ withE2E scriptBytes
+        $ \cfg ctx -> do
+            let sh = cfgScriptHash cfg
+                scriptAddr =
+                    cageAddrFromCfg cfg Testnet
 
-    -- Test 6: inverse roundtrip
+            -- Boot + register
+            bootAndRegister cfg ctx
+
+            tids <-
+                listTokens (tokens (state ctx))
+            let tid = head tids
+
+            -- Snapshot before burn
+            preUtxos <-
+                snapshotCageUtxos
+                    (provider ctx)
+                    scriptAddr
+            genesisUtxos <-
+                queryUTxOs
+                    (provider ctx)
+                    genesisAddr
+
+            -- Submit burn tx
+            signedBurn <-
+                buildAndSubmit ctx
+                    $ endToken
+                        (txBuilder ctx)
+                        tid
+                        genesisAddr
+            let resolver =
+                    mkResolver
+                        preUtxos
+                        genesisUtxos
+
+            -- Detect events
+            events <-
+                detectFromTx
+                    sh
+                    (pure . resolver)
+                    signedBurn
+            case events of
+                [CageBurn burnTid] -> do
+                    burnTid `shouldBe` tid
+                    applyCageEvent
+                        (state ctx)
+                        (trieManager ctx)
+                        (CageBurn burnTid)
+                    -- Token removed from state
+                    mTs <-
+                        getToken
+                            (tokens (state ctx))
+                            tid
+                    mTs `shouldBe` Nothing
+                _ ->
+                    expectationFailure
+                        $ "expected CageBurn, got: "
+                            <> show events
+
+    -- Test 6: burn inverse roundtrip
+    it "burn inverse roundtrip"
+        $ withE2E scriptBytes
+        $ \cfg ctx -> do
+            let sh = cfgScriptHash cfg
+                scriptAddr =
+                    cageAddrFromCfg cfg Testnet
+
+            -- Boot + register
+            bootAndRegister cfg ctx
+
+            tids <-
+                listTokens (tokens (state ctx))
+            let tid = head tids
+
+            -- Save token state before burn
+            Just tsBefore <-
+                getToken
+                    (tokens (state ctx))
+                    tid
+
+            -- Snapshot before burn
+            preUtxos <-
+                snapshotCageUtxos
+                    (provider ctx)
+                    scriptAddr
+            genesisUtxos <-
+                queryUTxOs
+                    (provider ctx)
+                    genesisAddr
+
+            -- Submit burn tx
+            signedBurn <-
+                buildAndSubmit ctx
+                    $ endToken
+                        (txBuilder ctx)
+                        tid
+                        genesisAddr
+            let resolver =
+                    mkResolver
+                        preUtxos
+                        genesisUtxos
+
+            -- Detect events
+            events <-
+                detectFromTx
+                    sh
+                    (pure . resolver)
+                    signedBurn
+            case events of
+                [evt@(CageBurn burnTid)] -> do
+                    burnTid `shouldBe` tid
+                    -- Compute inverse BEFORE apply
+                    cageInvs <-
+                        computeInverse
+                            (state ctx)
+                            evt
+                    trieInvs <-
+                        applyCageEvent
+                            (state ctx)
+                            (trieManager ctx)
+                            evt
+                    let allInvs =
+                            cageInvs ++ trieInvs
+                    -- Token gone
+                    mTs2 <-
+                        getToken
+                            (tokens (state ctx))
+                            tid
+                    mTs2 `shouldBe` Nothing
+                    -- Apply inverses to rollback
+                    applyCageInverses
+                        (state ctx)
+                        (trieManager ctx)
+                        (reverse allInvs)
+                    -- Token restored with same state
+                    mTs3 <-
+                        getToken
+                            (tokens (state ctx))
+                            tid
+                    mTs3 `shouldBe` Just tsBefore
+                _ ->
+                    expectationFailure
+                        $ "expected CageBurn, got: "
+                            <> show events
+
+    -- Test 7: inverse roundtrip (boot)
     it "inverse roundtrip"
         $ withE2E scriptBytes
         $ \cfg ctx -> do

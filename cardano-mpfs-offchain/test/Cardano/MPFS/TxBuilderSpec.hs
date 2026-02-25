@@ -294,6 +294,7 @@ spec = describe "Cardano.MPFS.TxBuilder.Real" $ do
     requestDeleteSpec
     retractRequestSpec
     updateTokenSpec
+    endTokenSpec
     bootTokenSpec
 
 -- ---------------------------------------------------------
@@ -482,6 +483,51 @@ updateTokenSpec =
                     tx ^. witsTxL . rdmrsTxWitsL
             -- one Modify + one Contribute
             Map.size rdmrs `shouldBe` 2
+
+-- ---------------------------------------------------------
+-- endToken
+-- ---------------------------------------------------------
+
+endTokenSpec :: Spec
+endTokenSpec =
+    describe "endToken" $ do
+        it "builds a balanced tx" $ do
+            tx <- runEndToken
+            let outList = toOutList tx
+            length outList
+                `shouldSatisfy` (>= 1)
+
+        it "burns exactly one token" $ do
+            tx <- runEndToken
+            let MultiAsset ma =
+                    tx ^. bodyTxL . mintTxBodyL
+                mPolicy =
+                    Map.lookup cagePolicyId ma
+            mPolicy `shouldSatisfy` isJust
+            let assets = fromJust mPolicy
+            Map.size assets `shouldBe` 1
+            let qty = head (Map.elems assets)
+            qty `shouldBe` (-1)
+
+        it "has a script witness" $ do
+            tx <- runEndToken
+            let scripts =
+                    tx ^. witsTxL . scriptTxWitsL
+            Map.size scripts `shouldBe` 1
+
+        it "has spending and minting redeemers" $ do
+            tx <- runEndToken
+            let (Redeemers rdmrs) =
+                    tx ^. witsTxL . rdmrsTxWitsL
+            -- one spending (End) + one minting (Burning)
+            Map.size rdmrs `shouldBe` 2
+
+        it "consumes the state UTxO" $ do
+            (tx, stateIn) <- runEndTokenWith
+            let ins =
+                    tx ^. bodyTxL . inputsTxBodyL
+            Set.member stateIn ins
+                `shouldBe` True
 
 -- ---------------------------------------------------------
 -- bootToken (blueprint-dependent)
@@ -735,6 +781,51 @@ runUpdateTokenWith = do
     tx <-
         updateToken builder testTid feeAddr
     pure (tx, stateIn, reqIn)
+
+-- | Run endToken.
+runEndToken :: IO (Tx ConwayEra)
+runEndToken = fst <$> runEndTokenWith
+
+-- | Run endToken and return details.
+runEndTokenWith :: IO (Tx ConwayEra, TxIn)
+runEndTokenWith = do
+    st <- mkMockState
+    let ts =
+            TokenState
+                { owner = testKh
+                , root = Root (BS.replicate 32 0)
+                , maxFee = Coin 1_000_000
+                , processTime = 300_000
+                , retractTime = 600_000
+                }
+    putToken (tokens st) testTid ts
+    stateIn <- generate genTxIn
+    feeIn <- generate genTxIn
+    let scriptAddr = cageAddr Testnet
+        feeAddr = testAddr testKh
+        cageUtxos =
+            [(stateIn, mkStateTxOut)]
+        walletUtxos =
+            [
+                ( feeIn
+                , mkBasicTxOut
+                    feeAddr
+                    (inject (Coin 50_000_000))
+                )
+            ]
+        prov =
+            mkRoutingProvider
+                [ (scriptAddr, cageUtxos)
+                , (feeAddr, walletUtxos)
+                ]
+        builder =
+            mkRealTxBuilder
+                testCageConfig
+                prov
+                st
+                dummyTrieManager
+    tx <- endToken builder testTid feeAddr
+    pure (tx, stateIn)
 
 -- | Run bootToken with a given CageConfig.
 runBootToken :: CageConfig -> IO (Tx ConwayEra)

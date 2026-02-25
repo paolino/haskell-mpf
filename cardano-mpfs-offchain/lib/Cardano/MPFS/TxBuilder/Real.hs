@@ -31,6 +31,9 @@ import Cardano.MPFS.TxBuilder.Config
 import Cardano.MPFS.TxBuilder.Real.Boot
     ( bootTokenImpl
     )
+import Cardano.MPFS.TxBuilder.Real.End
+    ( endTokenImpl
+    )
 import Cardano.MPFS.TxBuilder.Real.Internal
     ( computeScriptHash
     , extractCageDatum
@@ -67,8 +70,5 @@ mkRealTxBuilder cfg prov st tm =
             updateTokenImpl cfg prov st tm
         , retractRequest =
             retractRequestImpl cfg prov st
-        , endToken = \_ _ ->
-            error
-                "mkRealTxBuilder: endToken \
-                \not yet implemented"
+        , endToken = endTokenImpl cfg prov
         }
