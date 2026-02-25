@@ -76,6 +76,7 @@ library
     Cardano.MPFS.Application
     Cardano.MPFS.Balance
     Cardano.MPFS.Blueprint
+    Cardano.MPFS.Bootstrap
     Cardano.MPFS.Context
     Cardano.MPFS.Indexer
     Cardano.MPFS.Indexer.CageEvent
@@ -118,6 +119,27 @@ library
     Cardano.MPFS.TxBuilder.Real.Update
     Cardano.MPFS.Types
 
+executable mpfs-bootstrap-genesis
+  import:           warnings
+  default-language: GHC2021
+  hs-source-dirs:   exe
+  main-is:          GenBootstrap.hs
+  build-depends:
+    , aeson
+    , base
+    , bytestring
+    , cardano-data
+    , cardano-ledger-api
+    , cardano-ledger-binary
+    , cardano-ledger-conway
+    , cardano-ledger-core
+    , cardano-ledger-mary
+    , cardano-ledger-shelley
+    , cardano-mpfs-offchain
+    , optparse-applicative
+
+  ghc-options:      -threaded
+
 test-suite unit-tests
   import:           warnings
   type:             exitcode-stdio-1.0
@@ -149,6 +171,7 @@ test-suite unit-tests
 
   other-modules:
     Cardano.MPFS.BalanceSpec
+    Cardano.MPFS.BootstrapSpec
     Cardano.MPFS.Generators
     Cardano.MPFS.Indexer.CageEventSpec
     Cardano.MPFS.Indexer.CageFollowerSpec
@@ -180,6 +203,7 @@ test-suite e2e-tests
     , cardano-ledger-binary
     , cardano-ledger-core
     , cardano-ledger-mary
+    , cardano-ledger-shelley
     , cardano-mpfs-offchain
     , containers
     , directory
@@ -194,6 +218,7 @@ test-suite e2e-tests
     , unix
 
   other-modules:
+    Cardano.MPFS.E2E.BootstrapSpec
     Cardano.MPFS.E2E.CageSpec
     Cardano.MPFS.E2E.Devnet
     Cardano.MPFS.E2E.IndexerSpec

@@ -505,6 +505,7 @@ withE2E scriptBytes action = do
                     , dbPath = rocksDir
                     , channelCapacity = 16
                     , cageConfig = cfg
+                    , bootstrapFile = Nothing
                     }
         withApplication appCfg $ \ctx -> do
             _ <-

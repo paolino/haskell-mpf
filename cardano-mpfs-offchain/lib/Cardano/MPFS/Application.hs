@@ -71,6 +71,8 @@ data AppConfig = AppConfig
     -- ^ TBQueue capacity for N2C channels
     , cageConfig :: !CageConfig
     -- ^ Cage script and protocol parameters
+    , bootstrapFile :: !(Maybe FilePath)
+    -- ^ CBOR bootstrap file for fresh DB seeding
     }
 
 -- | Default RocksDB configuration.

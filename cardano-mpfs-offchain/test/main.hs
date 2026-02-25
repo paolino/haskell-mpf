@@ -14,6 +14,7 @@ import Cardano.MPFS.Trie.PureManager
     )
 
 import Cardano.MPFS.BalanceSpec qualified as BalanceSpec
+import Cardano.MPFS.BootstrapSpec qualified as BootstrapSpec
 import Cardano.MPFS.Indexer.CageEventSpec qualified as CageEventSpec
 import Cardano.MPFS.Indexer.CageFollowerSpec qualified as CageFollowerSpec
 import Cardano.MPFS.Indexer.CodecsSpec qualified as CodecsSpec
@@ -34,6 +35,7 @@ main =
         $ \db nodesCF kvCF -> do
             counterRef <- newIORef (0 :: Int)
             hspec $ do
+                BootstrapSpec.spec
                 BalanceSpec.spec
                 CageEventSpec.spec
                 CageFollowerSpec.spec

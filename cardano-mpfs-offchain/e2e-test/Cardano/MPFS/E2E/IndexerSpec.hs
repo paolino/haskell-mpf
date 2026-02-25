@@ -902,6 +902,7 @@ withE2E scriptBytes action = do
                         , dbPath = tmpDir
                         , channelCapacity = 16
                         , cageConfig = cfg
+                        , bootstrapFile = Nothing
                         }
             withApplication appCfg $ \ctx -> do
                 _ <-
