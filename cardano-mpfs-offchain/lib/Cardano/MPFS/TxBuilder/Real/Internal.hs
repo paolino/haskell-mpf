@@ -39,6 +39,8 @@ module Cardano.MPFS.TxBuilder.Real.Internal
       -- * Execution units
     , defaultMintExUnits
     , defaultSpendExUnits
+    , modifyExUnits
+    , contributeExUnits
 
       -- * Script integrity
     , computeScriptIntegrity
@@ -189,6 +191,23 @@ defaultMintExUnits =
 defaultSpendExUnits :: ExUnits
 defaultSpendExUnits =
     ExUnits 14_000_000 500_000_000
+
+-- | Execution units for the @Modify@ redeemer,
+-- scaled by the number of proofs. Each proof
+-- adds roughly 500M CPU steps for the on-chain
+-- MPF fold.
+modifyExUnits :: Int -> ExUnits
+modifyExUnits nProofs =
+    ExUnits
+        14_000_000
+        (fromIntegral nProofs * 500_000_000)
+
+-- | Execution units for the @Contribute@ redeemer.
+-- Contribute just checks the request token matches
+-- the state token — much cheaper than @Modify@.
+contributeExUnits :: ExUnits
+contributeExUnits =
+    ExUnits 200_000 100_000_000
 
 -- | Build the cage 'Script' from config bytes.
 mkCageScript :: CageConfig -> Script ConwayEra

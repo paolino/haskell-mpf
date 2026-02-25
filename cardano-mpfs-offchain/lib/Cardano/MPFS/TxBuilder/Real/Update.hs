@@ -208,7 +208,7 @@ updateTokenImpl cfg prov _st tm tid addr = do
                     in  ( ConwaySpending (AsIx ix)
                         ,
                             ( toLedgerData rdm
-                            , defaultSpendExUnits
+                            , contributeExUnits
                             )
                         )
                 )
@@ -220,7 +220,8 @@ updateTokenImpl cfg prov _st tm tid addr = do
                         (AsIx stateIx)
                   ,
                       ( toLedgerData modifyRedeemer
-                      , defaultSpendExUnits
+                      , modifyExUnits
+                            (length proofs)
                       )
                   )
                     : contributeEntries
