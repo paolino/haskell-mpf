@@ -194,6 +194,12 @@ dummyTrieManager =
             error "dummyTrieManager: createTrie"
         , deleteTrie = \_ ->
             error "dummyTrieManager: deleteTrie"
+        , registerTrie = \_ ->
+            error "dummyTrieManager: registerTrie"
+        , hideTrie = \_ ->
+            error "dummyTrieManager: hideTrie"
+        , unhideTrie = \_ ->
+            error "dummyTrieManager: unhideTrie"
         }
 
 -- | Build a Provider that returns different UTxOs

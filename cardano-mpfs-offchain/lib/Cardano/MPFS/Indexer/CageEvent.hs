@@ -22,6 +22,7 @@ module Cardano.MPFS.Indexer.CageEvent
     , inversesOf
     ) where
 
+import Data.ByteString (ByteString)
 import Data.ByteString.Short qualified as SBS
 import Data.Foldable (toList)
 import Data.Map.Strict qualified as Map
@@ -132,6 +133,10 @@ data CageInverseOp
       InvRemoveRequest !TxIn
     | -- | Restore a token's previous root
       InvRestoreRoot !TokenId !Root
+    | -- | Restore key→value in token's trie (undo delete/update)
+      InvTrieInsert !TokenId !ByteString !ByteString
+    | -- | Remove key from token's trie (undo insert)
+      InvTrieDelete !TokenId !ByteString
     deriving stock (Eq, Show)
 
 -- | Detect cage events from a transaction.

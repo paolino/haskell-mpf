@@ -717,9 +717,8 @@ persistsAcrossReopen =
                     db
                     nodesCF
                     kvCF
-            -- Register token (no deletion since
-            -- fresh IORef doesn't contain it)
-            createTrie mgr reopenTidA
+            -- Register token without deleting data
+            registerTrie mgr reopenTidA
             withTrie mgr reopenTidA $ \trie -> do
                 root2 <- getRoot trie
                 root2 `shouldBe` root1
@@ -811,8 +810,8 @@ multipleToksSurviveReopen =
                             db
                             nodesCF
                             kvCF
-                    createTrie mgr reopenTidA
-                    createTrie mgr reopenTidB
+                    registerTrie mgr reopenTidA
+                    registerTrie mgr reopenTidB
                     withTrie mgr reopenTidA
                         $ \trie -> do
                             rootA2 <- getRoot trie

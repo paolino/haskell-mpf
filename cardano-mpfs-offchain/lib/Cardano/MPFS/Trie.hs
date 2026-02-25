@@ -51,9 +51,22 @@ data TrieManager m = TrieManager
     -- perform arbitrary effects — only trie
     -- operations and pure computation.
     , createTrie :: TokenId -> m ()
-    -- ^ Create a new empty trie for a token
+    -- ^ Create a new empty trie for a token.
+    -- Deletes any existing data first.
     , deleteTrie :: TokenId -> m ()
-    -- ^ Delete a token's trie
+    -- ^ Delete a token's trie (permanent removal)
+    , registerTrie :: TokenId -> m ()
+    -- ^ Register an existing trie (persistent backend
+    -- only). Makes 'withTrie' work for tries that
+    -- already have data in storage. No-op for
+    -- in-memory backends.
+    , hideTrie :: TokenId -> m ()
+    -- ^ Mark a token's trie as hidden (burn forward).
+    -- Data is preserved; 'withTrie' will fail until
+    -- 'unhideTrie' is called.
+    , unhideTrie :: TokenId -> m ()
+    -- ^ Restore a hidden token's trie to visible
+    -- (burn rollback).
     }
 
 -- | Operations on a single trie.

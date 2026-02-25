@@ -19,6 +19,7 @@ import Cardano.MPFS.Indexer.CageFollowerSpec qualified as CageFollowerSpec
 import Cardano.MPFS.Indexer.CodecsSpec qualified as CodecsSpec
 import Cardano.MPFS.Indexer.InverseSpec qualified as InverseSpec
 import Cardano.MPFS.Indexer.PersistentSpec qualified as PersistentStateSpec
+import Cardano.MPFS.Indexer.RollbackSpec qualified as RollbackSpec
 import Cardano.MPFS.OnChainSpec qualified as OnChainSpec
 import Cardano.MPFS.ProofSpec qualified as ProofSpec
 import Cardano.MPFS.StateSpec qualified as StateSpec
@@ -52,4 +53,5 @@ main =
                 PersistentStateSpec.spec
                 ProofSpec.spec
                 OnChainSpec.spec
+                RollbackSpec.spec
                 TxBuilderSpec.spec

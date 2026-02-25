@@ -88,12 +88,13 @@ dbConfig =
 -- | Column family names and configs for the cage
 -- indexer. Order must match the 'AllColumns' GADT
 -- constructor order: CageTokens, CageRequests,
--- CageCfg, TrieNodes, TrieKV.
+-- CageCfg, CageRollbacks, TrieNodes, TrieKV.
 cageColumnFamilies :: [(String, Config)]
 cageColumnFamilies =
     [ ("tokens", dbConfig)
     , ("requests", dbConfig)
     , ("cage-cfg", dbConfig)
+    , ("cage-rollbacks", dbConfig)
     , ("trie-nodes", dbConfig)
     , ("trie-kv", dbConfig)
     ]
@@ -120,8 +121,8 @@ withApplication cfg action =
                     mkRocksDBDatabase db columns
             rt <- newRunTransaction database
             let st = mkPersistentState rt
-            -- Extract trie column families (4th and 5th)
-            case drop 3 (columnFamilies db) of
+            -- Extract trie column families (5th and 6th)
+            case drop 4 (columnFamilies db) of
                 (nodesCF : kvCF : _) -> do
                     tm <-
                         mkPersistentTrieManager
@@ -166,5 +167,5 @@ withApplication cfg action =
                     pure result
                 _ ->
                     error
-                        "Expected at least 5 \
+                        "Expected at least 6 \
                         \column families"

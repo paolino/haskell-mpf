@@ -16,6 +16,7 @@ module Cardano.MPFS.Generators
     , genSlotNo
     , genBlockId
     , genCageEvent
+    , genCageInverseOp
     ) where
 
 import Data.ByteString qualified as BS
@@ -45,7 +46,10 @@ import Cardano.Ledger.Keys (KeyHash (..), KeyRole (..))
 import Cardano.Ledger.Slot (SlotNo (..))
 import Cardano.Ledger.TxIn (TxId (..), TxIn (..))
 
-import Cardano.MPFS.Indexer.CageEvent (CageEvent (..))
+import Cardano.MPFS.Indexer.CageEvent
+    ( CageEvent (..)
+    , CageInverseOp (..)
+    )
 import Cardano.MPFS.Types
     ( AssetName (..)
     , BlockId (..)
@@ -177,4 +181,26 @@ genCageEvent = do
             <*> listOf1 genTxIn
         , CageRetract <$> genTxIn
         , pure (CageBurn tid)
+        ]
+
+-- | Generate a random 'ByteString' (1-16 bytes).
+genBS :: Gen BS.ByteString
+genBS = do
+    len <- choose (1, 16)
+    BS.pack <$> vectorOf len arbitrary
+
+-- | Generate a 'CageInverseOp'.
+genCageInverseOp :: Gen CageInverseOp
+genCageInverseOp = do
+    tid <- genTokenId
+    oneof
+        [ InvRestoreToken tid <$> genTokenState
+        , pure (InvRemoveToken tid)
+        , InvRestoreRequest
+            <$> genTxIn
+            <*> genRequest tid
+        , InvRemoveRequest <$> genTxIn
+        , InvRestoreRoot tid <$> genRoot
+        , InvTrieInsert tid <$> genBS <*> genBS
+        , InvTrieDelete tid <$> genBS
         ]

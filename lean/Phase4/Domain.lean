@@ -9,12 +9,20 @@
 namespace Phase4
 
 -- Abstract types (opaque in Lean, concrete in QC)
-variable (SlotNo TokenId TxIn Root : Type)
+variable (SlotNo TokenId TxIn Root K V : Type)
 
--- Cage state: tokens + requests
-structure CageState (TokenId TxIn Root : Type) where
+-- Trie visibility (models TrieStatus)
+inductive TrieVisibility where
+  | visible
+  | hidden
+  deriving Repr, DecidableEq
+
+-- Cage state: tokens + requests + trie visibility + trie entries
+structure CageState (TokenId TxIn Root K V : Type) where
   tokens : List (TokenId × Root)
   requests : List TxIn
+  trieVisibility : TokenId → TrieVisibility
+  trieEntries : TokenId → K → Option V
 
 -- A cage event from a block
 inductive CageEvent (TokenId TxIn Root : Type) where
@@ -26,10 +34,13 @@ inductive CageEvent (TokenId TxIn Root : Type) where
   | burn (tid : TokenId)
 
 -- An inverse operation (stored for rollback)
-inductive InverseOp (TokenId TxIn Root : Type) where
+inductive InverseOp (TokenId TxIn Root K V : Type) where
   | restoreToken (tid : TokenId) (root : Root)
   | removeToken (tid : TokenId)
   | restoreRequest (txIn : TxIn)
   | removeRequest (txIn : TxIn)
+  -- Trie-level inverse ops
+  | restoreTrieEntry (tid : TokenId) (k : K) (v : V)
+  | removeTrieEntry (tid : TokenId) (k : K)
 
 end Phase4

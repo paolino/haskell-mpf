@@ -11,14 +11,17 @@
 -- indexer's RocksDB-backed persistent state. Each
 -- constructor selects a column with its key-value
 -- types enforced at the type level. Covers cage
--- state (tokens, requests, checkpoint) and trie
--- storage (nodes, key-value pairs).
+-- state (tokens, requests, checkpoint), rollback
+-- storage, and trie storage (nodes, key-value pairs).
 module Cardano.MPFS.Indexer.Columns
     ( -- * Column selector
       AllColumns (..)
 
       -- * Checkpoint type
     , CageCheckpoint (..)
+
+      -- * Rollback entry type
+    , CageRollbackEntry (..)
     ) where
 
 import Data.ByteString (ByteString)
@@ -31,6 +34,7 @@ import Database.KV.Transaction
     , KV
     )
 
+import Cardano.MPFS.Indexer.CageEvent (CageInverseOp)
 import Cardano.MPFS.Types
     ( BlockId
     , Request
@@ -47,13 +51,22 @@ data CageCheckpoint = CageCheckpoint
     -- ^ Slot of the last processed block
     , checkpointBlockId :: !BlockId
     -- ^ Header hash of the last processed block
+    , rollbackSlots :: ![SlotNo]
+    -- ^ Slots with stored inverse ops, bounded by
+    -- the security parameter (k ≈ 2160).
+    }
+    deriving stock (Eq, Show)
+
+-- | Inverse ops stored for a single block's slot,
+-- used for rollback.
+newtype CageRollbackEntry = CageRollbackEntry
+    { unRollbackEntry :: [CageInverseOp]
     }
     deriving stock (Eq, Show)
 
 -- | Column family selector for indexer persistent
--- state. Covers cage state and per-token trie
--- storage. UTxO columns (from cardano-utxo-csmt)
--- will be added when integrating the Follower.
+-- state. Covers cage state, rollback storage, and
+-- per-token trie storage.
 data AllColumns x where
     -- | Token state: maps token identifiers to
     -- their on-chain state.
@@ -67,6 +80,10 @@ data AllColumns x where
     -- processed block position.
     CageCfg
         :: AllColumns (KV () CageCheckpoint)
+    -- | Rollback storage: maps slot numbers to
+    -- inverse ops for rollback.
+    CageRollbacks
+        :: AllColumns (KV SlotNo CageRollbackEntry)
     -- | Trie nodes: MPF trie structure. Keys are
     -- token-prefixed serialized 'HexKey', values
     -- are serialized 'HexIndirect'.
@@ -81,6 +98,7 @@ instance GEq AllColumns where
     geq CageTokens CageTokens = Just Refl
     geq CageRequests CageRequests = Just Refl
     geq CageCfg CageCfg = Just Refl
+    geq CageRollbacks CageRollbacks = Just Refl
     geq TrieNodes TrieNodes = Just Refl
     geq TrieKV TrieKV = Just Refl
     geq _ _ = Nothing
@@ -95,6 +113,9 @@ instance GCompare AllColumns where
     gcompare CageCfg CageCfg = GEQ
     gcompare CageCfg _ = GLT
     gcompare _ CageCfg = GGT
+    gcompare CageRollbacks CageRollbacks = GEQ
+    gcompare CageRollbacks _ = GLT
+    gcompare _ CageRollbacks = GGT
     gcompare TrieNodes TrieNodes = GEQ
     gcompare TrieNodes TrieKV = GLT
     gcompare TrieKV TrieNodes = GGT

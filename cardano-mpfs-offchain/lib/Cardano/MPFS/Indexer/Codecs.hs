@@ -28,6 +28,8 @@ module Cardano.MPFS.Indexer.Codecs
     , requestPrism
     , unitPrism
     , checkpointPrism
+    , slotNoPrism
+    , rollbackEntryPrism
     , rawBytesPrism
     ) where
 
@@ -68,15 +70,20 @@ import Database.KV.Transaction
     , fromPairList
     )
 
+import Cardano.MPFS.Indexer.CageEvent
+    ( CageInverseOp (..)
+    )
 import Cardano.MPFS.Indexer.Columns
     ( AllColumns (..)
     , CageCheckpoint (..)
+    , CageRollbackEntry (..)
     )
 import Cardano.MPFS.Types
     ( BlockId (..)
     , Operation (..)
     , Request (..)
     , Root (..)
+    , SlotNo
     , TokenId (..)
     , TokenState (..)
     , TxIn
@@ -100,6 +107,11 @@ allCodecs =
             :=> Codecs
                 { keyCodec = unitPrism
                 , valueCodec = checkpointPrism
+                }
+        , CageRollbacks
+            :=> Codecs
+                { keyCodec = slotNoPrism
+                , valueCodec = rollbackEntryPrism
                 }
         , TrieNodes
             :=> Codecs
@@ -205,27 +217,46 @@ unitPrism :: Prism' ByteString ()
 unitPrism =
     prism' (const mempty) (const (Just ()))
 
--- | Encode/decode 'CageCheckpoint' as a 2-element
--- CBOR list: @[slot, blockId]@.
+-- | Encode/decode 'CageCheckpoint' as a 3-element
+-- CBOR list: @[slot, blockId, rollbackSlots]@.
 checkpointPrism :: Prism' ByteString CageCheckpoint
 checkpointPrism = prism' enc dec
   where
     enc CageCheckpoint{..} =
         toStrictByteString
-            $ encodeListLen 2
+            $ encodeListLen 3
                 <> encodeBytes
                     (ledgerEnc checkpointSlot)
                 <> encodeBytes
                     (unBlockId checkpointBlockId)
+                <> encodeSlotList rollbackSlots
     dec = decodeCBOR $ do
-        decodeListLenOf 2
+        decodeListLenOf 3
         s <- ledgerDec =<< decodeBytes
         b <- BlockId <$> decodeBytes
+        slots <- decodeSlotList
         pure
             CageCheckpoint
                 { checkpointSlot = s
                 , checkpointBlockId = b
+                , rollbackSlots = slots
                 }
+
+-- | Encode/decode 'SlotNo' via ledger CBOR.
+slotNoPrism :: Prism' ByteString SlotNo
+slotNoPrism = prism' ledgerEnc ledgerDecMaybe
+
+-- | Encode/decode 'CageRollbackEntry' as a CBOR
+-- list of tagged inverse ops.
+rollbackEntryPrism
+    :: Prism' ByteString CageRollbackEntry
+rollbackEntryPrism = prism' enc dec
+  where
+    enc (CageRollbackEntry ops) =
+        toStrictByteString $ encodeInvOps ops
+    dec =
+        decodeCBOR
+            $ CageRollbackEntry <$> decodeInvOps
 
 -- | Identity prism for raw 'ByteString' columns
 -- (trie nodes and key-value pairs). No encoding or
@@ -308,6 +339,175 @@ decodeOperation = do
                 <$> decodeBytes
                 <*> decodeBytes
         _ -> fail "Unknown Operation tag"
+
+-- --------------------------------------------------------
+-- Slot list encoding
+-- --------------------------------------------------------
+
+encodeSlotList :: [SlotNo] -> Encoding
+encodeSlotList ss =
+    encodeListLen (fromIntegral (length ss))
+        <> foldMap (encodeBytes . ledgerEnc) ss
+
+decodeSlotList :: Decoder s [SlotNo]
+decodeSlotList = do
+    n <- decodeListLen
+    mapM (const $ ledgerDec =<< decodeBytes) [1 .. n]
+
+-- --------------------------------------------------------
+-- CageInverseOp CBOR encoding
+-- --------------------------------------------------------
+
+-- Tags: 0=RestoreToken 1=RemoveToken
+--       2=RestoreRequest 3=RemoveRequest
+--       4=RestoreRoot 5=TrieInsert 6=TrieDelete
+
+encodeInvOps :: [CageInverseOp] -> Encoding
+encodeInvOps ops =
+    encodeListLen (fromIntegral (length ops))
+        <> foldMap encodeInvOp ops
+
+encodeInvOp :: CageInverseOp -> Encoding
+encodeInvOp = \case
+    InvRestoreToken tid ts ->
+        encodeListLen 3
+            <> encodeWord8 0
+            <> encodeBytes (encTokenId tid)
+            <> encodeBytes
+                ( toStrictByteString
+                    $ encodeTokenState ts
+                )
+    InvRemoveToken tid ->
+        encodeListLen 2
+            <> encodeWord8 1
+            <> encodeBytes (encTokenId tid)
+    InvRestoreRequest txIn req ->
+        encodeListLen 3
+            <> encodeWord8 2
+            <> encodeBytes (ledgerEnc txIn)
+            <> encodeBytes (encRequest req)
+    InvRemoveRequest txIn ->
+        encodeListLen 2
+            <> encodeWord8 3
+            <> encodeBytes (ledgerEnc txIn)
+    InvRestoreRoot tid root ->
+        encodeListLen 3
+            <> encodeWord8 4
+            <> encodeBytes (encTokenId tid)
+            <> encodeBytes (unRoot root)
+    InvTrieInsert tid k v ->
+        encodeListLen 4
+            <> encodeWord8 5
+            <> encodeBytes (encTokenId tid)
+            <> encodeBytes k
+            <> encodeBytes v
+    InvTrieDelete tid k ->
+        encodeListLen 3
+            <> encodeWord8 6
+            <> encodeBytes (encTokenId tid)
+            <> encodeBytes k
+
+encodeTokenState :: TokenState -> Encoding
+encodeTokenState TokenState{..} =
+    encodeListLen 5
+        <> encodeBytes (ledgerEnc owner)
+        <> encodeBytes (unRoot root)
+        <> encodeBytes (ledgerEnc maxFee)
+        <> encodeInteger processTime
+        <> encodeInteger retractTime
+
+encRequest :: Request -> ByteString
+encRequest Request{..} =
+    toStrictByteString
+        $ encodeListLen 6
+            <> encodeBytes
+                (encTokenId requestToken)
+            <> encodeBytes
+                (ledgerEnc requestOwner)
+            <> encodeBytes requestKey
+            <> encodeOperation requestValue
+            <> encodeBytes
+                (ledgerEnc requestFee)
+            <> encodeInteger requestSubmittedAt
+
+decodeInvOps :: Decoder s [CageInverseOp]
+decodeInvOps = do
+    n <- decodeListLen
+    mapM (const decodeInvOp) [1 .. n]
+
+decodeInvOp :: Decoder s CageInverseOp
+decodeInvOp = do
+    len <- decodeListLen
+    tag <- decodeWord8
+    case (tag, len) of
+        (0, 3) -> do
+            tid <- decTokenId =<< decodeBytes
+            tsBytes <- decodeBytes
+            ts <- decTokenState tsBytes
+            pure $ InvRestoreToken tid ts
+        (1, 2) ->
+            InvRemoveToken
+                <$> (decTokenId =<< decodeBytes)
+        (2, 3) -> do
+            txIn <- ledgerDec =<< decodeBytes
+            reqBytes <- decodeBytes
+            req <- decReq reqBytes
+            pure $ InvRestoreRequest txIn req
+        (3, 2) ->
+            InvRemoveRequest
+                <$> (ledgerDec =<< decodeBytes)
+        (4, 3) -> do
+            tid <- decTokenId =<< decodeBytes
+            r <- Root <$> decodeBytes
+            pure $ InvRestoreRoot tid r
+        (5, 4) -> do
+            tid <- decTokenId =<< decodeBytes
+            k <- decodeBytes
+            InvTrieInsert tid k <$> decodeBytes
+        (6, 3) -> do
+            tid <- decTokenId =<< decodeBytes
+            InvTrieDelete tid <$> decodeBytes
+        _ -> fail "Unknown CageInverseOp tag"
+
+decTokenState
+    :: ByteString -> Decoder s TokenState
+decTokenState bs = case decodeCBOR dec bs of
+    Just ts -> pure ts
+    Nothing -> fail "decTokenState: bad CBOR"
+  where
+    dec = do
+        decodeListLenOf 5
+        owner' <- ledgerDec =<< decodeBytes
+        root' <- Root <$> decodeBytes
+        maxFee' <- ledgerDec =<< decodeBytes
+        processTime' <- decodeInteger
+        retractTime' <- decodeInteger
+        pure
+            TokenState
+                { owner = owner'
+                , root = root'
+                , maxFee = maxFee'
+                , processTime = processTime'
+                , retractTime = retractTime'
+                }
+
+decReq :: ByteString -> Decoder s Request
+decReq bs = case decodeCBOR dec bs of
+    Just req -> pure req
+    Nothing -> fail "decReq: bad CBOR"
+  where
+    dec = do
+        decodeListLenOf 6
+        requestToken <-
+            decTokenId =<< decodeBytes
+        requestOwner <-
+            ledgerDec =<< decodeBytes
+        requestKey <- decodeBytes
+        requestValue <- decodeOperation
+        requestFee <-
+            ledgerDec =<< decodeBytes
+        requestSubmittedAt <- decodeInteger
+        pure Request{..}
 
 -- --------------------------------------------------------
 -- CBOR decode helper

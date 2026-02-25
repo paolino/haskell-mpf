@@ -12,7 +12,6 @@ module Cardano.MPFS.Indexer.CageFollowerSpec
     ( spec
     ) where
 
-import Data.ByteString qualified as BS
 import Test.Hspec
     ( Spec
     , describe
@@ -65,7 +64,7 @@ spec = describe "CageFollower" $ do
             $ \(tid, ts) -> do
                 st <- mkMockState
                 tm <- mkPureTrieManager
-                applyCageEvent st tm (CageBoot tid ts)
+                _ <- applyCageEvent st tm (CageBoot tid ts)
                 getToken (tokens st) tid
                     `shouldReturn` Just ts
 
@@ -81,10 +80,11 @@ spec = describe "CageFollower" $ do
             $ \(txIn, req) -> do
                 st <- mkMockState
                 tm <- mkPureTrieManager
-                applyCageEvent
-                    st
-                    tm
-                    (CageRequest txIn req)
+                _ <-
+                    applyCageEvent
+                        st
+                        tm
+                        (CageRequest txIn req)
                 getRequest (requests st) txIn
                     `shouldReturn` Just req
 
@@ -101,26 +101,28 @@ spec = describe "CageFollower" $ do
                 st <- mkMockState
                 tm <- mkPureTrieManager
                 -- First insert, then retract
-                applyCageEvent
-                    st
-                    tm
-                    (CageRequest txIn req)
-                applyCageEvent
-                    st
-                    tm
-                    (CageRetract txIn)
+                _ <-
+                    applyCageEvent
+                        st
+                        tm
+                        (CageRequest txIn req)
+                _ <-
+                    applyCageEvent
+                        st
+                        tm
+                        (CageRetract txIn)
                 getRequest (requests st) txIn
                     `shouldReturn` Nothing
 
-        it "burn removes token and deletes trie"
+        it "burn removes token and hides trie"
             $ property
             $ forAll ((,) <$> genTokenId <*> genTokenState)
             $ \(tid, ts) -> do
                 st <- mkMockState
                 tm <- mkPureTrieManager
                 -- First boot, then burn
-                applyCageEvent st tm (CageBoot tid ts)
-                applyCageEvent st tm (CageBurn tid)
+                _ <- applyCageEvent st tm (CageBoot tid ts)
+                _ <- applyCageEvent st tm (CageBurn tid)
                 getToken (tokens st) tid
                     `shouldReturn` Nothing
 
@@ -136,12 +138,13 @@ spec = describe "CageFollower" $ do
                 st <- mkMockState
                 tm <- mkPureTrieManager
                 -- Boot the token first
-                applyCageEvent st tm (CageBoot tid ts)
+                _ <- applyCageEvent st tm (CageBoot tid ts)
                 -- Update with no consumed requests
-                applyCageEvent
-                    st
-                    tm
-                    (CageUpdate tid newRoot [])
+                _ <-
+                    applyCageEvent
+                        st
+                        tm
+                        (CageUpdate tid newRoot [])
                 mTs <- getToken (tokens st) tid
                 fmap root mTs `shouldBe` Just newRoot
 
@@ -168,7 +171,7 @@ spec = describe "CageFollower" $ do
                 st <- mkMockState
                 tm <- mkPureTrieManager
                 -- Boot token first so it exists
-                applyCageEvent st tm (CageBoot tid ts)
+                _ <- applyCageEvent st tm (CageBoot tid ts)
                 inv <-
                     computeInverse
                         st
@@ -185,7 +188,7 @@ spec = describe "CageFollower" $ do
             $ \(tid, ts) -> do
                 st <- mkMockState
                 tm <- mkPureTrieManager
-                applyCageEvent st tm (CageBoot tid ts)
+                _ <- applyCageEvent st tm (CageBoot tid ts)
                 inv <-
                     computeInverse st (CageBurn tid)
                 inv `shouldBe` [InvRestoreToken tid ts]
@@ -199,8 +202,8 @@ spec = describe "CageFollower" $ do
                 st <- mkMockState
                 tm <- mkPureTrieManager
                 -- Boot → Burn → InvRestore
-                applyCageEvent st tm (CageBoot tid ts)
-                applyCageEvent st tm (CageBurn tid)
+                _ <- applyCageEvent st tm (CageBoot tid ts)
+                _ <- applyCageEvent st tm (CageBurn tid)
                 applyCageInverses
                     st
                     tm
@@ -214,7 +217,7 @@ spec = describe "CageFollower" $ do
             $ \(tid, ts) -> do
                 st <- mkMockState
                 tm <- mkPureTrieManager
-                applyCageEvent st tm (CageBoot tid ts)
+                _ <- applyCageEvent st tm (CageBoot tid ts)
                 applyCageInverses
                     st
                     tm
@@ -234,11 +237,12 @@ spec = describe "CageFollower" $ do
                 st <- mkMockState
                 tm <- mkPureTrieManager
                 let origRoot = root ts
-                applyCageEvent st tm (CageBoot tid ts)
-                applyCageEvent
-                    st
-                    tm
-                    (CageUpdate tid newRoot [])
+                _ <- applyCageEvent st tm (CageBoot tid ts)
+                _ <-
+                    applyCageEvent
+                        st
+                        tm
+                        (CageUpdate tid newRoot [])
                 applyCageInverses
                     st
                     tm
@@ -254,7 +258,7 @@ spec = describe "CageFollower" $ do
                 tm <- mkPureTrieManager
                 inv <-
                     computeInverse st (CageBoot tid ts)
-                applyCageEvent st tm (CageBoot tid ts)
+                _ <- applyCageEvent st tm (CageBoot tid ts)
                 applyCageInverses st tm inv
                 getToken (tokens st) tid
                     `shouldReturn` Nothing
@@ -275,10 +279,11 @@ spec = describe "CageFollower" $ do
                     computeInverse
                         st
                         (CageRequest txIn req)
-                applyCageEvent
-                    st
-                    tm
-                    (CageRequest txIn req)
+                _ <-
+                    applyCageEvent
+                        st
+                        tm
+                        (CageRequest txIn req)
                 applyCageInverses st tm inv
                 getRequest (requests st) txIn
                     `shouldReturn` Nothing

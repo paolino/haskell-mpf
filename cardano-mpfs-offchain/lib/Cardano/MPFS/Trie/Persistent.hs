@@ -21,7 +21,7 @@ module Cardano.MPFS.Trie.Persistent
     ) where
 
 import Control.Lens (Prism')
-import Control.Monad (when)
+
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as SBS
@@ -124,6 +124,7 @@ mkPersistentTrieManager
     -> IO (TrieManager IO)
 mkPersistentTrieManager db nodesCF kvCF = do
     knownRef <- newIORef (Set.empty :: Set TokenId)
+    hiddenRef <- newIORef (Set.empty :: Set TokenId)
     pure
         TrieManager
             { withTrie =
@@ -132,12 +133,14 @@ mkPersistentTrieManager db nodesCF kvCF = do
                     nodesCF
                     kvCF
                     knownRef
+                    hiddenRef
             , withSpeculativeTrie =
                 persistentWithSpeculativeTrie
                     db
                     nodesCF
                     kvCF
                     knownRef
+                    hiddenRef
             , createTrie =
                 persistentCreateTrie
                     db
@@ -150,6 +153,12 @@ mkPersistentTrieManager db nodesCF kvCF = do
                     nodesCF
                     kvCF
                     knownRef
+            , registerTrie =
+                persistentRegisterTrie knownRef
+            , hideTrie =
+                persistentHideTrie hiddenRef
+            , unhideTrie =
+                persistentUnhideTrie hiddenRef
             }
 
 -- | Bracket that opens a RocksDB database, creates
@@ -208,24 +217,40 @@ persistentWithTrie
     -> ColumnFamily
     -> ColumnFamily
     -> IORef (Set TokenId)
+    -> IORef (Set TokenId)
     -> TokenId
     -> (Trie IO -> IO a)
     -> IO a
-persistentWithTrie db nodesCF kvCF knownRef tid action = do
-    known <- readIORef knownRef
-    if Set.member tid known
-        then do
-            let pfx = tokenPrefix tid
-                database =
-                    mkPrefixedTrieDB
-                        db
-                        nodesCF
-                        kvCF
-                        pfx
-            action (mkPersistentTrie database)
-        else
-            error
-                $ "Trie not found: " ++ show tid
+persistentWithTrie
+    db
+    nodesCF
+    kvCF
+    knownRef
+    hiddenRef
+    tid
+    action = do
+        hidden <- readIORef hiddenRef
+        if Set.member tid hidden
+            then
+                error
+                    $ "Trie is hidden: " ++ show tid
+            else do
+                known <- readIORef knownRef
+                if Set.member tid known
+                    then do
+                        let pfx = tokenPrefix tid
+                            database =
+                                mkPrefixedTrieDB
+                                    db
+                                    nodesCF
+                                    kvCF
+                                    pfx
+                        action
+                            (mkPersistentTrie database)
+                    else
+                        error
+                            $ "Trie not found: "
+                                ++ show tid
 
 -- | Run a speculative (dry-run) session against a
 -- token's trie. Reads from a snapshot and buffers
@@ -235,6 +260,7 @@ persistentWithSpeculativeTrie
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> IORef (Set TokenId)
     -> IORef (Set TokenId)
     -> TokenId
     -> ( forall n
@@ -248,24 +274,34 @@ persistentWithSpeculativeTrie
     nodesCF
     kvCF
     knownRef
+    hiddenRef
     tid
     action = do
-        known <- readIORef knownRef
-        if Set.member tid known
-            then do
-                let pfx = tokenPrefix tid
-                    database =
-                        mkPrefixedTrieDB
-                            db
-                            nodesCF
-                            kvCF
-                            pfx
-                runSpeculation
-                    database
-                    (action mkTransactionalTrie)
-            else
+        hidden <- readIORef hiddenRef
+        if Set.member tid hidden
+            then
                 error
-                    $ "Trie not found: " ++ show tid
+                    $ "Trie is hidden: " ++ show tid
+            else do
+                known <- readIORef knownRef
+                if Set.member tid known
+                    then do
+                        let pfx = tokenPrefix tid
+                            database =
+                                mkPrefixedTrieDB
+                                    db
+                                    nodesCF
+                                    kvCF
+                                    pfx
+                        runSpeculation
+                            database
+                            ( action
+                                mkTransactionalTrie
+                            )
+                    else
+                        error
+                            $ "Trie not found: "
+                                ++ show tid
 
 -- | Create a new empty trie for a token. Previous
 -- data is deleted if the token already exists.
@@ -277,10 +313,10 @@ persistentCreateTrie
     -> TokenId
     -> IO ()
 persistentCreateTrie db nodesCF kvCF knownRef tid = do
-    known <- readIORef knownRef
-    -- Delete existing data if present
-    when (Set.member tid known)
-        $ deleteAllWithPrefix db nodesCF kvCF pfx
+    -- Always delete: the DB may contain stale data
+    -- from a previous TrieManager (different knownRef)
+    -- or from a previous run.
+    deleteAllWithPrefix db nodesCF kvCF pfx
     modifyIORef' knownRef (Set.insert tid)
   where
     pfx = tokenPrefix tid
@@ -296,6 +332,28 @@ persistentDeleteTrie
 persistentDeleteTrie db nodesCF kvCF knownRef tid = do
     deleteAllWithPrefix db nodesCF kvCF (tokenPrefix tid)
     modifyIORef' knownRef (Set.delete tid)
+
+-- | Mark a token's trie as hidden. Data is preserved
+-- in RocksDB; 'withTrie' will fail until 'unhideTrie'.
+persistentHideTrie
+    :: IORef (Set TokenId) -> TokenId -> IO ()
+persistentHideTrie hiddenRef tid =
+    modifyIORef' hiddenRef (Set.insert tid)
+
+-- | Restore a hidden token's trie to visible.
+persistentUnhideTrie
+    :: IORef (Set TokenId) -> TokenId -> IO ()
+persistentUnhideTrie hiddenRef tid =
+    modifyIORef' hiddenRef (Set.delete tid)
+
+-- | Register an existing token so 'withTrie' works.
+-- Does not delete any data — use for adopting tries
+-- that already exist in the database (e.g. after
+-- reopening).
+persistentRegisterTrie
+    :: IORef (Set TokenId) -> TokenId -> IO ()
+persistentRegisterTrie knownRef tid =
+    modifyIORef' knownRef (Set.insert tid)
 
 -- --------------------------------------------------------
 -- Prefixed Database construction

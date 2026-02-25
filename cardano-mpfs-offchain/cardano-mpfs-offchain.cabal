@@ -83,6 +83,7 @@ library
     Cardano.MPFS.Indexer.Codecs
     Cardano.MPFS.Indexer.Columns
     Cardano.MPFS.Indexer.Persistent
+    Cardano.MPFS.Indexer.Rollback
     Cardano.MPFS.Indexer.Skeleton
     Cardano.MPFS.Mock.Context
     Cardano.MPFS.Mock.Indexer
@@ -153,6 +154,7 @@ test-suite unit-tests
     Cardano.MPFS.Indexer.CodecsSpec
     Cardano.MPFS.Indexer.InverseSpec
     Cardano.MPFS.Indexer.PersistentSpec
+    Cardano.MPFS.Indexer.RollbackSpec
     Cardano.MPFS.OnChainSpec
     Cardano.MPFS.ProofSpec
     Cardano.MPFS.StateSpec

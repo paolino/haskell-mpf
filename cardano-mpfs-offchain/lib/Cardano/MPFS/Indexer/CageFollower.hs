@@ -29,8 +29,7 @@ module Cardano.MPFS.Indexer.CageFollower
     ) where
 
 import Control.Monad (void)
-import Data.ByteString (ByteString)
-import Data.Foldable (for_, toList)
+import Data.Foldable (toList)
 import Data.Maybe (catMaybes)
 import Data.Set qualified as Set
 import Lens.Micro ((^.))
@@ -64,7 +63,6 @@ import Cardano.MPFS.Types
     ( ConwayEra
     , Operation (..)
     , Request (..)
-    , Root (..)
     , TokenId
     , TokenState (..)
     , TxIn
@@ -122,17 +120,18 @@ detectFromTx scriptHash resolveUtxo tx = do
             (Set.toList inputSet)
     pure $ detectCageEvents scriptHash resolved tx
 
--- | Process a single cage event: compute its inverse
--- and then apply it.
+-- | Process a single cage event: compute its cage
+-- inverse, apply the event (collecting trie inverses),
+-- and return both.
 processEvent
     :: State IO
     -> TrieManager IO
     -> CageEvent
     -> IO [CageInverseOp]
 processEvent st tm evt = do
-    inv <- computeInverse st evt
-    applyCageEvent st tm evt
-    pure inv
+    cageInvs <- computeInverse st evt
+    trieInvs <- applyCageEvent st tm evt
+    pure $ cageInvs ++ trieInvs
 
 -- | Resolve a list of 'TxIn' references to their
 -- 'TxOut' values using the UTxO resolver.
@@ -197,29 +196,40 @@ computeInverse
                 Nothing -> []
 
 -- | Apply a cage event to the state and trie manager.
+-- Returns trie-level inverse operations for rollback.
 applyCageEvent
     :: State IO
     -> TrieManager IO
     -> CageEvent
-    -> IO ()
+    -> IO [CageInverseOp]
 applyCageEvent st tm = \case
     CageBoot tid ts -> do
         putToken (tokens st) tid ts
         createTrie tm tid
-    CageRequest txIn req ->
+        pure []
+    CageRequest txIn req -> do
         putRequest (requests st) txIn req
+        pure []
     CageUpdate tid newRoot consumed -> do
-        -- Apply trie mutations for consumed requests
-        withTrie tm tid $ \trie ->
-            mapM_
-                ( \txIn -> do
-                    mReq <-
-                        getRequest
-                            (requests st)
-                            txIn
-                    for_ mReq (applyRequestOp trie)
-                )
-                consumed
+        -- Apply trie mutations, collecting inverses
+        trieInvs <-
+            withTrie tm tid $ \trie ->
+                concat
+                    <$> mapM
+                        ( \txIn -> do
+                            mReq <-
+                                getRequest
+                                    (requests st)
+                                    txIn
+                            case mReq of
+                                Just req ->
+                                    applyRequestOp
+                                        tid
+                                        trie
+                                        req
+                                Nothing -> pure []
+                        )
+                        consumed
         -- Remove consumed requests
         mapM_
             (removeRequest (requests st))
@@ -233,25 +243,67 @@ applyCageEvent st tm = \case
                     tid
                     ts{root = newRoot}
             Nothing -> pure ()
-    CageRetract txIn ->
+        pure trieInvs
+    CageRetract txIn -> do
         removeRequest (requests st) txIn
+        pure []
     CageBurn tid -> do
         removeToken (tokens st) tid
-        deleteTrie tm tid
+        hideTrie tm tid
+        pure []
 
--- | Apply a request's operation to a trie.
-applyRequestOp :: Trie IO -> Request -> IO ()
+-- | Apply a request's operation to a trie, returning
+-- inverse ops that can undo the mutation.
 applyRequestOp
-    Trie{insert = trieInsert, delete = trieDelete}
+    :: TokenId
+    -> Trie IO
+    -> Request
+    -> IO [CageInverseOp]
+applyRequestOp
+    tid
+    Trie
+        { insert = trieInsert
+        , delete = trieDelete
+        , lookup = trieLookup
+        }
     Request{requestKey, requestValue} =
         case requestValue of
-            Insert v ->
+            Insert v -> do
+                oldVal <- trieLookup requestKey
                 void $ trieInsert requestKey v
-            Delete _ ->
+                pure $ case oldVal of
+                    Nothing ->
+                        [InvTrieDelete tid requestKey]
+                    Just old ->
+                        [ InvTrieInsert
+                            tid
+                            requestKey
+                            old
+                        ]
+            Delete _ -> do
+                oldVal <- trieLookup requestKey
                 void $ trieDelete requestKey
+                pure $ case oldVal of
+                    Nothing -> []
+                    Just old ->
+                        [ InvTrieInsert
+                            tid
+                            requestKey
+                            old
+                        ]
             Update _ newV -> do
+                oldVal <- trieLookup requestKey
                 void $ trieDelete requestKey
                 void $ trieInsert requestKey newV
+                pure $ case oldVal of
+                    Nothing ->
+                        [InvTrieDelete tid requestKey]
+                    Just old ->
+                        [ InvTrieInsert
+                            tid
+                            requestKey
+                            old
+                        ]
 
 -- | Apply inverse operations for rollback, restoring
 -- the state to what it was before the events.
@@ -265,7 +317,7 @@ applyCageInverses st tm = mapM_ applyInv
     applyInv = \case
         InvRestoreToken tid ts -> do
             putToken (tokens st) tid ts
-            createTrie tm tid
+            unhideTrie tm tid
         InvRemoveToken tid -> do
             removeToken (tokens st) tid
             deleteTrie tm tid
@@ -282,3 +334,9 @@ applyCageInverses st tm = mapM_ applyInv
                         tid
                         ts{root = r}
                 Nothing -> pure ()
+        InvTrieInsert tid key val ->
+            withTrie tm tid $ \trie ->
+                void $ insert trie key val
+        InvTrieDelete tid key ->
+            withTrie tm tid $ \trie ->
+                void $ delete trie key

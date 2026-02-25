@@ -138,9 +138,10 @@ mkCheckpoints RunTransaction{runTransaction = run} =
                     Just
                         ( checkpointSlot
                         , checkpointBlockId
+                        , rollbackSlots
                         )
-        , putCheckpoint = \s b ->
+        , putCheckpoint = \s b slots ->
             run
                 $ insert CageCfg ()
-                $ CageCheckpoint s b
+                $ CageCheckpoint s b slots
         }

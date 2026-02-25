@@ -23,6 +23,7 @@ import Test.QuickCheck
 
 import Cardano.MPFS.Generators
     ( genBlockId
+    , genCageInverseOp
     , genRequest
     , genSlotNo
     , genTokenId
@@ -33,6 +34,8 @@ import Cardano.MPFS.Indexer.Codecs
     ( checkpointPrism
     , rawBytesPrism
     , requestPrism
+    , rollbackEntryPrism
+    , slotNoPrism
     , tokenIdPrism
     , tokenStatePrism
     , txInPrism
@@ -40,6 +43,7 @@ import Cardano.MPFS.Indexer.Codecs
     )
 import Cardano.MPFS.Indexer.Columns
     ( CageCheckpoint (..)
+    , CageRollbackEntry (..)
     )
 
 spec :: Spec
@@ -89,11 +93,35 @@ spec = describe "Codecs" $ do
             $ forAll genSlotNo
             $ \s ->
                 forAll genBlockId $ \b ->
-                    let cp = CageCheckpoint s b
-                    in  preview
-                            checkpointPrism
-                            (review checkpointPrism cp)
-                            === Just cp
+                    forAll genSlotList $ \slots ->
+                        let cp =
+                                CageCheckpoint s b slots
+                        in  preview
+                                checkpointPrism
+                                ( review
+                                    checkpointPrism
+                                    cp
+                                )
+                                === Just cp
+
+        prop "slotNoPrism"
+            $ forAll genSlotNo
+            $ \s ->
+                preview
+                    slotNoPrism
+                    (review slotNoPrism s)
+                    === Just s
+
+        prop "rollbackEntryPrism"
+            $ forAll genRollbackEntry
+            $ \entry ->
+                preview
+                    rollbackEntryPrism
+                    ( review
+                        rollbackEntryPrism
+                        entry
+                    )
+                    === Just entry
 
         prop "rawBytesPrism"
             $ forAll genBytes
@@ -152,14 +180,26 @@ spec = describe "Codecs" $ do
             $ forAll genSlotNo
             $ \s ->
                 forAll genBlockId $ \b ->
-                    not
-                        ( BS.null
-                            ( review
-                                checkpointPrism
-                                (CageCheckpoint s b)
+                    forAll genSlotList $ \slots ->
+                        not
+                            ( BS.null
+                                ( review
+                                    checkpointPrism
+                                    ( CageCheckpoint
+                                        s
+                                        b
+                                        slots
+                                    )
+                                )
                             )
-                        )
   where
     genBytes = do
         len <- choose (0 :: Int, 64)
         BS.pack <$> vectorOf len (choose (0, 255))
+    genSlotList = do
+        n <- choose (0 :: Int, 5)
+        vectorOf n genSlotNo
+    genRollbackEntry = do
+        n <- choose (0 :: Int, 5)
+        CageRollbackEntry
+            <$> vectorOf n genCageInverseOp

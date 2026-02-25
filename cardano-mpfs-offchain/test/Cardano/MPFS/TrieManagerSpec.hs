@@ -10,6 +10,7 @@ module Cardano.MPFS.TrieManagerSpec (spec) where
 import Data.ByteString qualified as B
 import Data.ByteString.Short qualified as SBS
 
+import Data.Maybe (isJust)
 import Test.Hspec
     ( Spec
     , describe
@@ -152,6 +153,65 @@ trieManagerSpec newTM = do
                 $ \trie -> insert trie "a" "1"
         unRoot specRoot
             `shouldBe` unRoot realRoot
+
+    it "hideTrie blocks withTrie" $ do
+        tm <- newTM
+        createTrie tm tokenA
+        void
+            $ withTrie tm tokenA
+            $ \trie -> insert trie "k" "v"
+        hideTrie tm tokenA
+        result <-
+            try
+                $ withTrie tm tokenA
+                $ \_ -> pure ()
+        case ( result
+                :: Either SomeException ()
+             ) of
+            Left _ -> pure ()
+            Right _ ->
+                error
+                    "Expected exception for \
+                    \hidden trie"
+
+    it "unhideTrie restores access" $ do
+        tm <- newTM
+        createTrie tm tokenA
+        rootBefore <- withTrie tm tokenA $ \trie ->
+            insert trie "k" "v"
+        hideTrie tm tokenA
+        unhideTrie tm tokenA
+        withTrie tm tokenA $ \trie -> do
+            root <- getRoot trie
+            root `shouldBe` rootBefore
+
+    it "hide preserves data" $ do
+        tm <- newTM
+        createTrie tm tokenA
+        _ <- withTrie tm tokenA $ \trie ->
+            insert trie "hello" "world"
+        hideTrie tm tokenA
+        unhideTrie tm tokenA
+        withTrie tm tokenA $ \trie -> do
+            mVal <-
+                Cardano.MPFS.Trie.lookup
+                    trie
+                    "hello"
+            mVal `shouldSatisfy` isJust
+
+    it "hide preserves other tokens" $ do
+        tm <- newTM
+        createTrie tm tokenA
+        createTrie tm tokenB
+        _ <- withTrie tm tokenA $ \trie ->
+            insert trie "a" "1"
+        rootB <- withTrie tm tokenB $ \trie ->
+            insert trie "b" "2"
+        hideTrie tm tokenA
+        -- tokenB should be unaffected
+        withTrie tm tokenB $ \trie -> do
+            root <- getRoot trie
+            root `shouldBe` rootB
 
     it "speculative read-your-writes" $ do
         tm <- newTM

@@ -21,6 +21,8 @@ import Data.IORef
     )
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Set (Set)
+import Data.Set qualified as Set
 
 import MPF.Backend.Pure
     ( MPFInMemoryDB
@@ -41,48 +43,67 @@ mkPureTrieManager = do
             ( Map.empty
                 :: Map TokenId (IORef MPFInMemoryDB)
             )
+    hiddenRef <- newIORef (Set.empty :: Set TokenId)
     pure
         TrieManager
-            { withTrie = pureWithTrie ref
+            { withTrie = pureWithTrie ref hiddenRef
             , withSpeculativeTrie =
-                pureWithSpeculativeTrie ref
+                pureWithSpeculativeTrie ref hiddenRef
             , createTrie = pureCreateTrie ref
             , deleteTrie = pureDeleteTrie ref
+            , registerTrie = \_ -> pure ()
+            , hideTrie = pureHideTrie hiddenRef
+            , unhideTrie = pureUnhideTrie hiddenRef
             }
 
 -- | Run an action with access to a token's trie.
--- Throws if the trie doesn't exist.
+-- Throws if the trie doesn't exist or is hidden.
 pureWithTrie
     :: IORef (Map TokenId (IORef MPFInMemoryDB))
+    -> IORef (Set TokenId)
     -> TokenId
     -> (Trie IO -> IO a)
     -> IO a
-pureWithTrie ref tid action = do
-    tries <- readIORef ref
-    case Map.lookup tid tries of
-        Nothing ->
+pureWithTrie ref hiddenRef tid action = do
+    hidden <- readIORef hiddenRef
+    if Set.member tid hidden
+        then
             error
-                $ "Trie not found: " ++ show tid
-        Just dbRef ->
-            action (mkPureTrieFromRef dbRef)
+                $ "Trie is hidden: " ++ show tid
+        else do
+            tries <- readIORef ref
+            case Map.lookup tid tries of
+                Nothing ->
+                    error
+                        $ "Trie not found: " ++ show tid
+                Just dbRef ->
+                    action (mkPureTrieFromRef dbRef)
 
 -- | Run a speculative session on a copy of the
 -- trie. The copy is discarded after the action.
 pureWithSpeculativeTrie
     :: IORef (Map TokenId (IORef MPFInMemoryDB))
+    -> IORef (Set TokenId)
     -> TokenId
     -> (forall n. Monad n => Trie n -> n a)
     -> IO a
-pureWithSpeculativeTrie ref tid action = do
-    tries <- readIORef ref
-    case Map.lookup tid tries of
-        Nothing ->
+pureWithSpeculativeTrie ref hiddenRef tid action = do
+    hidden <- readIORef hiddenRef
+    if Set.member tid hidden
+        then
             error
-                $ "Trie not found: " ++ show tid
-        Just dbRef -> do
-            db <- readIORef dbRef
-            copyRef <- newIORef db
-            action (mkPureTrieFromRef copyRef)
+                $ "Trie is hidden: " ++ show tid
+        else do
+            tries <- readIORef ref
+            case Map.lookup tid tries of
+                Nothing ->
+                    error
+                        $ "Trie not found: "
+                            ++ show tid
+                Just dbRef -> do
+                    db <- readIORef dbRef
+                    copyRef <- newIORef db
+                    action (mkPureTrieFromRef copyRef)
 
 -- | Create a new empty trie for a token.
 pureCreateTrie
@@ -93,10 +114,21 @@ pureCreateTrie ref tid = do
     dbRef <- newIORef emptyMPFInMemoryDB
     modifyIORef' ref (Map.insert tid dbRef)
 
--- | Delete a token's trie.
+-- | Delete a token's trie (permanent removal).
 pureDeleteTrie
     :: IORef (Map TokenId (IORef MPFInMemoryDB))
     -> TokenId
     -> IO ()
 pureDeleteTrie ref =
     modifyIORef' ref . Map.delete
+
+-- | Mark a token's trie as hidden. Data is preserved.
+pureHideTrie :: IORef (Set TokenId) -> TokenId -> IO ()
+pureHideTrie hiddenRef tid =
+    modifyIORef' hiddenRef (Set.insert tid)
+
+-- | Restore a hidden token's trie to visible.
+pureUnhideTrie
+    :: IORef (Set TokenId) -> TokenId -> IO ()
+pureUnhideTrie hiddenRef tid =
+    modifyIORef' hiddenRef (Set.delete tid)

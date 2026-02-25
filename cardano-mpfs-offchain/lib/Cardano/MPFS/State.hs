@@ -66,9 +66,12 @@ data Requests m = Requests
 -- | Interface for chain sync checkpoints.
 data Checkpoints m = Checkpoints
     { getCheckpoint
-        :: m (Maybe (SlotNo, BlockId))
-    -- ^ Get the last processed checkpoint
+        :: m (Maybe (SlotNo, BlockId, [SlotNo]))
+    -- ^ Get the last processed checkpoint:
+    -- (slot, blockId, rollbackSlots). The rollback
+    -- slots list tracks which slots have stored
+    -- inverse ops, bounded by the security parameter.
     , putCheckpoint
-        :: SlotNo -> BlockId -> m ()
-    -- ^ Store a new checkpoint
+        :: SlotNo -> BlockId -> [SlotNo] -> m ()
+    -- ^ Store a new checkpoint with rollback slots
     }
