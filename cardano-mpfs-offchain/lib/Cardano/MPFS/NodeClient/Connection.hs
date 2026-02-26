@@ -201,36 +201,32 @@ mkN2CApp lsqCh ltxsCh =
                 }
             ]
         }
-
--- | LocalTxSubmission codec.
-ltxsCodec =
-    LTxSCodec.codecLocalTxSubmission
-        (encodeNodeToClient @Block ccfg n2cVersion)
-        (decodeNodeToClient @Block ccfg n2cVersion)
-        (encodeNodeToClient @Block ccfg n2cVersion)
-        (decodeNodeToClient @Block ccfg n2cVersion)
-
--- | LocalStateQuery codec.
-lsqCodec =
-    codecLocalStateQuery
-        NodeToClientV_20
-        (encodePoint (encodeRawHash (Proxy @Block)))
-        (decodePoint (decodeRawHash (Proxy @Block)))
-        ( queryEncodeNodeToClient
-            ccfg
-            qv
-            n2cVersion
-            . SomeSecond
-        )
-        ( (\(SomeSecond q) -> Some q)
-            <$> queryDecodeNodeToClient
+  where
+    ltxsCodec =
+        LTxSCodec.codecLocalTxSubmission
+            (encodeNodeToClient @Block ccfg n2cVersion)
+            (decodeNodeToClient @Block ccfg n2cVersion)
+            (encodeNodeToClient @Block ccfg n2cVersion)
+            (decodeNodeToClient @Block ccfg n2cVersion)
+    lsqCodec =
+        codecLocalStateQuery
+            NodeToClientV_20
+            (encodePoint (encodeRawHash (Proxy @Block)))
+            (decodePoint (decodeRawHash (Proxy @Block)))
+            ( queryEncodeNodeToClient
                 ccfg
                 qv
                 n2cVersion
-        )
-        (encodeResult ccfg n2cVersion)
-        (decodeResult ccfg n2cVersion)
-  where
+                . SomeSecond
+            )
+            ( (\(SomeSecond q) -> Some q)
+                <$> queryDecodeNodeToClient
+                    ccfg
+                    qv
+                    n2cVersion
+            )
+            (encodeResult ccfg n2cVersion)
+            (decodeResult ccfg n2cVersion)
     qv =
         nodeToClientVersionToQueryVersion
             NodeToClientV_20
