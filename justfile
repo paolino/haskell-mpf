@@ -96,6 +96,10 @@ e2e match="":
             --test-option="{{ match }}"
     fi
 
+# Serve documentation locally
+docs:
+    mkdocs serve
+
 # Clean build artifacts
 clean:
     #!/usr/bin/env bash
