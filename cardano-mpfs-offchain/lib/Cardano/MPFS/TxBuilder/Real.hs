@@ -3,11 +3,15 @@
 -- Description : Real transaction builders for the MPFS cage
 -- License     : Apache-2.0
 --
--- Builds unsigned Cardano transactions for the MPFS
--- cage protocol: minting tokens, submitting requests,
--- retracting requests, and processing updates.
+-- Assembles the real 'TxBuilder' by wiring
+-- per-operation implementations from the @Real.*@
+-- submodules to a 'Provider', 'State', and
+-- 'TrieManager'. Returned transactions are unsigned
+-- Conway-era ledger values ready for key-witness
+-- addition and submission.
 --
--- Re-exports from per-operation submodules.
+-- Also re-exports 'computeScriptHash' and datum
+-- helpers used in tests.
 module Cardano.MPFS.TxBuilder.Real
     ( -- * Construction
       mkRealTxBuilder
@@ -55,9 +59,13 @@ import Cardano.MPFS.TxBuilder.Real.Update
 -- 'Provider', 'State', and 'TrieManager'.
 mkRealTxBuilder
     :: CageConfig
+    -- ^ Cage script config (bytes, hash, params)
     -> Provider IO
+    -- ^ Blockchain query interface
     -> State IO
+    -- ^ Token and request state
     -> TrieManager IO
+    -- ^ Per-token trie manager
     -> TxBuilder IO
 mkRealTxBuilder cfg prov st tm =
     TxBuilder

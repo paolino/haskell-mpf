@@ -3,9 +3,12 @@
 -- Description : LocalStateQuery protocol client
 -- License     : Apache-2.0
 --
--- A channel-driven LocalStateQuery client that
--- waits for a query, acquires the volatile tip,
--- serves the query batch, then releases and loops.
+-- Channel-driven LocalStateQuery client. On each
+-- iteration: waits for a query on the 'LSQChannel',
+-- acquires the volatile tip, drains all queued queries
+-- (batching them in a single acquired session), then
+-- releases and loops. This avoids re-acquiring for
+-- rapid-fire queries.
 module Cardano.MPFS.NodeClient.LocalStateQuery
     ( -- * Client construction
       mkLocalStateQueryClient
@@ -123,7 +126,9 @@ serveQuery ch (SomeLSQQuery query resultVar) =
 -- until the result is available.
 queryLSQ
     :: LSQChannel
+    -- ^ Channel to the LocalStateQuery client
     -> Query Block result
+    -- ^ The query to execute
     -> IO result
 queryLSQ ch query = do
     resultVar <- newEmptyTMVarIO

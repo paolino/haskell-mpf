@@ -7,9 +7,14 @@
 -- License     : Apache-2.0
 --
 -- Extracts cage-protocol events (boot, request, update,
--- retract, burn) from Cardano transactions by inspecting
--- mints, outputs, and redeemers at the cage script
--- address and policy ID.
+-- retract, burn) from Conway-era Cardano transactions by
+-- inspecting mints, outputs, and spending redeemers at
+-- the cage script address and policy ID.
+--
+-- Also provides 'inversesOf' for computing the inverse
+-- operations needed to undo each event during a chain
+-- rollback. These inverses are stored alongside
+-- checkpoints by "Cardano.MPFS.Indexer.Rollback".
 module Cardano.MPFS.Indexer.Event
     ( -- * Event type
       CageEvent (..)
@@ -109,15 +114,20 @@ import Cardano.MPFS.Core.Types
 
 -- | A cage-protocol event detected in a transaction.
 data CageEvent
-    = -- | Mint with cage policyId: new token created
+    = -- | Mint with cage policyId: new token created.
+      -- Carries the new 'TokenId' and its initial
+      -- 'TokenState' from the output datum.
       CageBoot !TokenId !TokenState
-    | -- | Output to cage address with RequestDatum
+    | -- | Output to cage address with a 'RequestDatum'.
+      -- Carries the UTxO reference and decoded 'Request'.
       CageRequest !TxIn !Request
-    | -- | Consume requests, update trie root
+    | -- | Oracle processes requests: consumes request
+      -- UTxOs and updates the trie root. Carries the
+      -- token, new root, and consumed request UTxOs.
       CageUpdate !TokenId !Root ![TxIn]
-    | -- | Cancel a pending request
+    | -- | Requester cancels a pending request.
       CageRetract !TxIn
-    | -- | Burn cage token: token removed
+    | -- | Burn cage token: token permanently removed.
       CageBurn !TokenId
     deriving stock (Eq, Show)
 
@@ -396,7 +406,8 @@ fromOnChainState OnChainTokenState{..} =
         }
 
 -- | Convert on-chain 'OnChainRequest' to off-chain
--- 'Request'.
+-- 'Request'. The address is accepted for future use
+-- but currently unused.
 fromOnChainReq :: Addr -> OnChainRequest -> Request
 fromOnChainReq _addr OnChainRequest{..} =
     Request
@@ -411,12 +422,16 @@ fromOnChainReq _addr OnChainRequest{..} =
         , requestSubmittedAt = requestSubmittedAt
         }
 
+-- | Convert on-chain 'OnChainOperation' to off-chain
+-- 'Operation'.
 fromOnChainOp :: OnChainOperation -> Operation
 fromOnChainOp = \case
     OpInsert v -> Insert v
     OpDelete v -> Delete v
     OpUpdate o n -> Update o n
 
+-- | Convert on-chain 'OnChainTokenId' to off-chain
+-- 'TokenId'.
 tokenIdFromOnChain :: OnChainTokenId -> TokenId
 tokenIdFromOnChain (OnChainTokenId (BuiltinByteString bs)) =
     TokenId (AssetName (SBS.toShort bs))

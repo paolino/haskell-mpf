@@ -4,6 +4,16 @@
 -- Module      : Cardano.MPFS.Trie
 -- Description : Per-token MPF trie management interface
 -- License     : Apache-2.0
+--
+-- Record-of-functions interface for managing
+-- per-token Merkle Patricia Forestry tries. The
+-- 'TrieManager' mediates access to individual 'Trie'
+-- handles and provides speculative (read-your-writes,
+-- then-discard) sessions for transaction building.
+--
+-- Implementations: "Cardano.MPFS.Trie.PureManager"
+-- (in-memory 'IORef'-based) and
+-- "Cardano.MPFS.Trie.Persistent" (RocksDB-backed).
 module Cardano.MPFS.Trie
     ( -- * Trie manager
       TrieManager (..)

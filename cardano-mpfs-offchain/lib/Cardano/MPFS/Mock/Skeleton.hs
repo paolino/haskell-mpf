@@ -3,10 +3,15 @@
 -- Description : Skeleton Indexer with no-op chain sync
 -- License     : Apache-2.0
 --
--- Provides a skeleton 'Indexer IO' with lifecycle
--- management (start\/stop\/pause\/resume) backed by
--- 'IORef' and 'MVar'. Returns a genesis tip.
--- Placeholder until csmt chain sync is wired.
+-- Skeleton implementation of the 'Indexer' interface
+-- that tracks lifecycle state via 'IORef' (running
+-- flag) and 'MVar' (pause/resume gate) but does not
+-- perform any actual chain synchronization.
+-- 'getTip' always returns genesis (slot 0).
+--
+-- Used by 'withApplication' as a temporary
+-- placeholder until the real chain-sync indexer
+-- (see "Cardano.MPFS.Indexer.Follower") is wired.
 module Cardano.MPFS.Mock.Skeleton
     ( -- * Construction
       mkSkeletonIndexer

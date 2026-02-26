@@ -2,6 +2,12 @@
 -- Module      : Cardano.MPFS.State
 -- Description : Token and request state tracking interface
 -- License     : Apache-2.0
+--
+-- Record-of-functions interface for tracking the
+-- off-chain projection of token state, pending requests,
+-- and chain sync checkpoints. Implementations:
+-- "Cardano.MPFS.Indexer.Persistent" (RocksDB-backed)
+-- and "Cardano.MPFS.Mock.State" (in-memory for tests).
 module Cardano.MPFS.State
     ( -- * Combined state
       State (..)

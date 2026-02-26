@@ -5,11 +5,17 @@
 -- Description : CIP-57 blueprint schema validation
 -- License     : Apache-2.0
 --
--- Minimal CIP-57 Plutus blueprint parser and
--- validator. Loads a @plutus.json@ blueprint file,
--- extracts type schemas and script hashes, and
--- validates 'PlutusCore.Data.Data' values against
--- the declared schemas.
+-- Minimal CIP-57 Plutus blueprint parser and validator.
+-- Loads a @plutus.json@ blueprint file produced by the
+-- Aiken compiler, extracts type schemas and script hashes,
+-- and validates 'PlutusCore.Data.Data' values against the
+-- declared schemas.
+--
+-- The blueprint also carries optional @compiledCode@ fields
+-- (hex-encoded double-CBOR PlutusV3 scripts). 'extractCompiledCode'
+-- decodes these into 'ShortByteString' suitable for
+-- 'PlutusBinary', and 'applyVersion' applies the version
+-- parameter to produce the final on-chain script.
 module Cardano.MPFS.Core.Blueprint
     ( -- * Schema types
       Blueprint (..)
@@ -68,7 +74,9 @@ import UntypedPlutusCore.DeBruijn ()
 -- | A single constructor alternative in a schema.
 data Constructor = Constructor
     { conIndex :: Integer
+    -- ^ Constructor tag (matches Aiken's Constr index)
     , conFields :: [Schema]
+    -- ^ Schemas for each positional field
     }
     deriving stock (Show, Eq)
 
@@ -89,9 +97,13 @@ data Schema
 -- | A validator entry in the blueprint.
 data Validator = Validator
     { vTitle :: Text
+    -- ^ Human-readable validator name (e.g. @\"cage.mint\"@)
     , vDatum :: Maybe Schema
+    -- ^ Datum schema, absent for minting validators
     , vRedeemer :: Schema
+    -- ^ Redeemer schema
     , vHash :: Text
+    -- ^ Hex-encoded script hash (28 bytes)
     , vCompiledCode :: Maybe Text
     -- ^ Hex-encoded double-CBOR PlutusV3 script
     }
@@ -100,7 +112,9 @@ data Validator = Validator
 -- | A parsed CIP-57 blueprint.
 data Blueprint = Blueprint
     { validators :: [Validator]
+    -- ^ All validator entries in the blueprint
     , definitions :: Map Text Schema
+    -- ^ Named type definitions referenced by @$ref@
     }
     deriving stock (Show, Eq)
 
@@ -196,7 +210,9 @@ stripPrefix pfx t =
 -- | Load and parse a CIP-57 blueprint from a file
 -- path.
 loadBlueprint
-    :: FilePath -> IO (Either String Blueprint)
+    :: FilePath
+    -- ^ Path to the @plutus.json@ file
+    -> IO (Either String Blueprint)
 loadBlueprint path = do
     bs <- BS.readFile path
     pure $ Aeson.eitherDecodeStrict' bs
@@ -208,7 +224,13 @@ loadBlueprint path = do
 -- | Validate a 'Data' value against a 'Schema',
 -- resolving @$ref@ through the definitions map.
 validateData
-    :: Map Text Schema -> Schema -> Data -> Bool
+    :: Map Text Schema
+    -- ^ Named definitions for @$ref@ resolution
+    -> Schema
+    -- ^ Schema to validate against
+    -> Data
+    -- ^ Value to validate
+    -> Bool
 validateData defs schema d = case (schema, d) of
     (SBytes, B _) -> True
     (SInteger, I _) -> True
@@ -242,7 +264,11 @@ validateData defs schema d = case (schema, d) of
 -- | Find the first validator whose title starts with
 -- the given prefix and return its hash.
 extractScriptHash
-    :: Text -> Blueprint -> Maybe Text
+    :: Text
+    -- ^ Title prefix to match (e.g. @\"cage\"@)
+    -> Blueprint
+    -- ^ Blueprint to search
+    -> Maybe Text
 extractScriptHash prefix bp =
     case filter
         (T.isPrefixOf prefix . vTitle)
@@ -261,7 +287,9 @@ extractScriptHash prefix bp =
 -- for 'PlutusBinary'.
 extractCompiledCode
     :: Text
+    -- ^ Title prefix to match
     -> Blueprint
+    -- ^ Blueprint to search
     -> Maybe SBS.ShortByteString
 extractCompiledCode prefix bp = do
     v <-
@@ -311,7 +339,9 @@ decodeHex t
 -- integer, producing the final script bytes.
 applyVersion
     :: Integer
+    -- ^ Version number to apply as the first parameter
     -> SBS.ShortByteString
+    -- ^ Flat-encoded UPLC program (from 'extractCompiledCode')
     -> SBS.ShortByteString
 applyVersion ver sbs =
     let

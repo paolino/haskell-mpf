@@ -3,12 +3,16 @@
 -- Description : Aiken-compatible proof serialization
 -- License     : Apache-2.0
 --
--- Serializes 'MPFProof' to the CBOR/PlutusData format
--- expected by the Aiken on-chain validator.
+-- Serializes 'MPFProof' (from @merkle-patricia-forestry@)
+-- to the CBOR\/PlutusData format expected by the Aiken
+-- on-chain validator, and converts proofs to the on-chain
+-- 'ProofStep' type used in 'UpdateRedeemer'.
 --
--- The encoding uses indefinite-length CBOR lists and
+-- The CBOR encoding uses indefinite-length lists and
 -- bytestrings to match the reference TypeScript
--- implementation byte-for-byte.
+-- implementation byte-for-byte. Steps are reversed from
+-- the library's leaf-to-root order to the root-to-leaf
+-- order expected on-chain.
 module Cardano.MPFS.Core.Proof
     ( -- * Serialization
       serializeProof
@@ -51,7 +55,10 @@ import Cardano.MPFS.Core.OnChain
 --
 -- The output is byte-identical to the TypeScript
 -- reference @proof.toCBOR()@.
-serializeProof :: MPFProof MPFHash -> ByteString
+serializeProof
+    :: MPFProof MPFHash
+    -- ^ Proof produced by an insert\/delete\/update
+    -> ByteString
 serializeProof MPFProof{mpfProofSteps} =
     BL.toStrict
         . toLazyByteString
@@ -145,7 +152,9 @@ encodeStep
 -- Steps are reversed from leaf-to-root storage order
 -- to root-to-leaf (same as 'serializeProof').
 toProofSteps
-    :: MPFProof MPFHash -> [ProofStep]
+    :: MPFProof MPFHash
+    -- ^ Proof produced by an insert\/delete\/update
+    -> [ProofStep]
 toProofSteps MPFProof{mpfProofSteps} =
     map convertStep (reverse mpfProofSteps)
 

@@ -2,6 +2,12 @@
 -- Module      : Cardano.MPFS.Provider
 -- Description : Blockchain query interface
 -- License     : Apache-2.0
+--
+-- Record-of-functions interface for querying the Cardano
+-- blockchain. Implementations live in
+-- "Cardano.MPFS.Provider.NodeClient" (node-to-client
+-- LocalStateQuery) and "Cardano.MPFS.Mock.Provider"
+-- (in-memory stub for tests).
 module Cardano.MPFS.Provider
     ( -- * Provider interface
       Provider (..)

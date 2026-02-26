@@ -2,3 +2,4 @@ dist-newstyle/
 .llm/
 result
 .direnv/
+.hoogle/

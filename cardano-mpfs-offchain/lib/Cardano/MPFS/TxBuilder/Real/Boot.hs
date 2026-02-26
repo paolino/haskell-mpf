@@ -4,6 +4,12 @@
 -- Module      : Cardano.MPFS.TxBuilder.Real.Boot
 -- Description : Boot token minting transaction
 -- License     : Apache-2.0
+--
+-- Builds the minting transaction for a new MPFS cage
+-- token. Picks a wallet UTxO as seed for asset-name
+-- derivation, mints +1 token at the cage policy, and
+-- creates a State UTxO with empty root and configured
+-- default parameters.
 module Cardano.MPFS.TxBuilder.Real.Boot
     ( bootTokenImpl
     ) where
@@ -79,8 +85,11 @@ import Cardano.MPFS.TxBuilder.Real.Internal
 -- a State UTxO with empty root and maxFee.
 bootTokenImpl
     :: CageConfig
+    -- ^ Cage script config
     -> Provider IO
+    -- ^ Blockchain query interface
     -> Addr
+    -- ^ Owner address (receives change, owns the token)
     -> IO (Tx ConwayEra)
 bootTokenImpl cfg prov addr = do
     pp <- queryProtocolParams prov

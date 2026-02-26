@@ -3,11 +3,21 @@
 -- Description : CBOR bootstrap file for UTxO seeding
 -- License     : Apache-2.0
 --
--- Encode and decode CBOR bootstrap files for seeding
--- a fresh database with UTxO entries. The file format
--- is a 3-element CBOR array: slot number, optional
--- block hash, and an indefinite-length map of
--- serialized key-value byte pairs.
+-- Encode and decode CBOR bootstrap files for seeding a
+-- fresh database with UTxO entries. A bootstrap file
+-- captures a UTxO snapshot at a known chain point so
+-- the indexer can start from that slot instead of
+-- replaying the entire chain.
+--
+-- The file format is a 3-element CBOR array:
+--
+-- @
+-- [slot :: Word64, blockHash :: bytes|null, {_ k: v, … }]
+-- @
+--
+-- Decoding is streaming ('foldBootstrapEntries') so
+-- arbitrarily large snapshots can be loaded without
+-- holding the full map in memory.
 module Cardano.MPFS.Core.Bootstrap
     ( -- * Header
       BootstrapHeader (..)
@@ -51,7 +61,10 @@ import Data.Word (Word64)
 -- the actual block hash at the given slot.
 data BootstrapHeader = BootstrapHeader
     { bootstrapSlot :: !Word64
+    -- ^ Slot number at which the snapshot was taken
     , bootstrapBlockHash :: !(Maybe ByteString)
+    -- ^ Block header hash, or 'Nothing' if discovery
+    -- ChainSync is needed to resolve it
     }
     deriving stock (Eq, Show)
 
@@ -68,8 +81,11 @@ data BootstrapHeader = BootstrapHeader
 -- the appropriate ledger CBOR version).
 encodeBootstrapFile
     :: FilePath
+    -- ^ Output file path
     -> BootstrapHeader
+    -- ^ Slot and optional block hash
     -> [(ByteString, ByteString)]
+    -- ^ Key-value pairs (pre-serialized CBOR)
     -> IO ()
 encodeBootstrapFile fp hdr pairs =
     BSL.writeFile fp
@@ -95,8 +111,11 @@ encodeBootstrapFile fp hdr pairs =
 -- Never loads the full map into memory.
 foldBootstrapEntries
     :: FilePath
+    -- ^ Path to the bootstrap CBOR file
     -> (BootstrapHeader -> IO ())
+    -- ^ Callback invoked once with the header
     -> (ByteString -> ByteString -> IO ())
+    -- ^ Callback invoked for each key-value entry
     -> IO ()
 foldBootstrapEntries fp onHeader onEntry = do
     lbs <- BSL.readFile fp

@@ -6,9 +6,16 @@
 -- Description : N2C-backed transaction submitter
 -- License     : Apache-2.0
 --
--- Submitter implementation that sends transactions
--- to a Cardano node via the LocalTxSubmission
--- mini-protocol.
+-- Production implementation of the 'Submitter'
+-- interface. Sends signed transactions to a local
+-- Cardano node via the N2C LocalTxSubmission
+-- mini-protocol using an 'LTxSChannel' (see
+-- "Cardano.MPFS.NodeClient.Connection").
+--
+-- The ledger 'Tx ConwayEra' is wrapped into a
+-- consensus 'GenTx Block' before submission.
+-- Rejection reasons are serialized to 'ByteString'
+-- and returned as 'Rejected'.
 module Cardano.MPFS.Submitter.N2C
     ( -- * Construction
       mkN2CSubmitter
@@ -45,7 +52,10 @@ import Ouroboros.Consensus.Ledger.SupportsMempool
 
 -- | Create a 'Submitter IO' backed by the N2C
 -- LocalTxSubmission protocol.
-mkN2CSubmitter :: LTxSChannel -> Submitter IO
+mkN2CSubmitter
+    :: LTxSChannel
+    -- ^ LocalTxSubmission channel to the Cardano node
+    -> Submitter IO
 mkN2CSubmitter ch =
     Submitter
         { submitTx = \tx -> do

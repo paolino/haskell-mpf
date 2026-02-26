@@ -6,6 +6,13 @@
 -- Module      : Cardano.MPFS.TxBuilder.Real.Internal
 -- Description : Shared helpers for real transaction builders
 -- License     : Apache-2.0
+--
+-- Utility functions shared across the per-operation
+-- transaction builders (@Boot@, @Request@, @Update@,
+-- @Retract@, @End@). Covers script construction,
+-- datum\/redeemer encoding, address manipulation,
+-- UTxO lookup, spending-index computation,
+-- execution-unit defaults, and POSIX-to-slot conversion.
 module Cardano.MPFS.TxBuilder.Real.Internal
     ( -- * Script construction
       mkCageScript
@@ -158,7 +165,12 @@ import Cardano.MPFS.TxBuilder.Config
 -- bounds where the validator checks
 -- @entirely_before(deadline)@: the last valid
 -- slot is at or before the deadline.
-posixMsToSlot :: CageConfig -> Integer -> SlotNo
+posixMsToSlot
+    :: CageConfig
+    -- ^ Config with system start and slot length
+    -> Integer
+    -- ^ POSIX time in milliseconds
+    -> SlotNo
 posixMsToSlot cfg ms =
     let elapsed = max 0 (ms - systemStartPosixMs cfg)
         slot = elapsed `div` slotLengthMs cfg
@@ -169,7 +181,12 @@ posixMsToSlot cfg ms =
 -- bounds where the validator checks
 -- @entirely_after(deadline)@: the first valid
 -- slot is at or after the deadline.
-posixMsCeilSlot :: CageConfig -> Integer -> SlotNo
+posixMsCeilSlot
+    :: CageConfig
+    -- ^ Config with system start and slot length
+    -> Integer
+    -- ^ POSIX time in milliseconds
+    -> SlotNo
 posixMsCeilSlot cfg ms =
     let elapsed = max 0 (ms - systemStartPosixMs cfg)
         sl = slotLengthMs cfg
@@ -196,7 +213,10 @@ defaultSpendExUnits =
 -- scaled by the number of proofs. Each proof
 -- adds roughly 500M CPU steps for the on-chain
 -- MPF fold.
-modifyExUnits :: Int -> ExUnits
+modifyExUnits
+    :: Int
+    -- ^ Number of proofs (one per request)
+    -> ExUnits
 modifyExUnits nProofs =
     ExUnits
         14_000_000
@@ -210,7 +230,10 @@ contributeExUnits =
     ExUnits 200_000 100_000_000
 
 -- | Build the cage 'Script' from config bytes.
-mkCageScript :: CageConfig -> Script ConwayEra
+mkCageScript
+    :: CageConfig
+    -- ^ Config with applied script bytes
+    -> Script ConwayEra
 mkCageScript cfg =
     let plutus =
             Plutus @PlutusV3
@@ -227,7 +250,9 @@ mkCageScript cfg =
 -- Use this when building a 'CageConfig' to fill
 -- the 'cfgScriptHash' field.
 computeScriptHash
-    :: SBS.ShortByteString -> ScriptHash
+    :: SBS.ShortByteString
+    -- ^ Flat-encoded PlutusV3 script bytes
+    -> ScriptHash
 computeScriptHash sbs =
     let plutus =
             Plutus @PlutusV3
@@ -247,7 +272,12 @@ cagePolicyIdFromCfg =
     PolicyID . cfgScriptHash
 
 -- | Compute the cage script address from config.
-cageAddrFromCfg :: CageConfig -> Network -> Addr
+cageAddrFromCfg
+    :: CageConfig
+    -- ^ Config with script hash
+    -> Network
+    -- ^ Target network
+    -> Addr
 cageAddrFromCfg cfg net =
     Addr
         net
@@ -257,11 +287,15 @@ cageAddrFromCfg cfg net =
 -- | Build a 'CageDatum' for a request.
 mkRequestDatum
     :: TokenId
+    -- ^ Token to modify
     -> Addr
+    -- ^ Requester's address (owner key hash extracted)
     -> ByteString
+    -- ^ Trie key to operate on
     -> OnChainOperation
+    -- ^ Insert, delete, or update
     -> Integer
-    -- ^ Fee
+    -- ^ Fee (lovelace)
     -> Integer
     -- ^ Submitted at (POSIXTime in ms)
     -> PLC.Data
@@ -328,7 +362,11 @@ addrKeyHashBytes _ = BS.empty
 -- | Reconstruct an 'Addr' from raw payment key hash
 -- bytes.
 addrFromKeyHashBytes
-    :: Network -> ByteString -> Addr
+    :: Network
+    -- ^ Target network
+    -> ByteString
+    -- ^ Raw 28-byte payment key hash
+    -> Addr
 addrFromKeyHashBytes net bs =
     case hashFromBytes bs of
         Just h ->
@@ -372,8 +410,11 @@ findUtxoByTxIn needle =
 -- asset name.
 findStateUtxo
     :: PolicyID
+    -- ^ Cage minting policy
     -> TokenId
+    -- ^ Token to look for
     -> [(TxIn, TxOut ConwayEra)]
+    -- ^ UTxO set to search
     -> Maybe (TxIn, TxOut ConwayEra)
 findStateUtxo policyId tid = find' isState
   where
@@ -394,7 +435,9 @@ findStateUtxo policyId tid = find' isState
 -- their inline datums.
 findRequestUtxos
     :: TokenId
+    -- ^ Token to filter by
     -> [(TxIn, TxOut ConwayEra)]
+    -- ^ UTxO set to search
     -> [(TxIn, TxOut ConwayEra)]
 findRequestUtxos tid = filter isRequest
   where
@@ -440,7 +483,9 @@ spendingIndex needle inputs =
 -- protocol params, redeemers, and languages used.
 computeScriptIntegrity
     :: PParams ConwayEra
+    -- ^ Current protocol parameters
     -> Redeemers ConwayEra
+    -- ^ All redeemers in the transaction
     -> StrictMaybe ScriptIntegrityHash
 computeScriptIntegrity pp rdmrs =
     let langViews :: Set.Set LangDepView

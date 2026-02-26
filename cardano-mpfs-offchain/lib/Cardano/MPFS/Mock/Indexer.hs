@@ -3,8 +3,13 @@
 -- Description : No-op mock Indexer implementation
 -- License     : Apache-2.0
 --
--- Provides a mock 'Indexer IO' where start\/stop are
--- no-ops and 'getTip' returns a genesis-like tip.
+-- Stub implementation of the 'Indexer' interface
+-- where all lifecycle operations (start, stop,
+-- pause, resume) are no-ops and 'getTip' returns
+-- slot 0 with a null block id. Useful for tests
+-- that don't need chain-sync indexing. See
+-- "Cardano.MPFS.Mock.Skeleton" for a slightly
+-- richer skeleton with lifecycle tracking.
 module Cardano.MPFS.Mock.Indexer
     ( -- * Construction
       mkMockIndexer

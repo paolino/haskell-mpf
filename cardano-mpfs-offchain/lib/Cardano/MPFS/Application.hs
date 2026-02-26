@@ -3,9 +3,20 @@
 -- Description : Application wiring and lifecycle
 -- License     : Apache-2.0
 --
--- Wires all service interfaces into a 'Context IO'
--- backed by a real N2C node connection, persistent
--- RocksDB state, and persistent trie management.
+-- Top-level wiring module that assembles all
+-- service interfaces into a fully operational
+-- 'Context IO'. The bracket 'withApplication' opens
+-- a shared RocksDB database, connects to a local
+-- Cardano node via N2C, and builds the production
+-- 'Provider', 'Submitter', persistent 'State',
+-- persistent 'TrieManager', real 'TxBuilder', and a
+-- skeleton 'Indexer'. On exit it cancels the node
+-- connection thread and closes the database.
+--
+-- Optionally seeds a fresh database from a CBOR
+-- bootstrap file (see "Cardano.MPFS.Core.Bootstrap")
+-- so chain sync can resume from the bootstrap point
+-- rather than genesis.
 module Cardano.MPFS.Application
     ( -- * Configuration
       AppConfig (..)
@@ -121,7 +132,11 @@ cageColumnFamilies =
 -- wires real Provider, Submitter, persistent State
 -- and TrieManager, and tears down on exit.
 withApplication
-    :: AppConfig -> (Context IO -> IO a) -> IO a
+    :: AppConfig
+    -- ^ Application configuration
+    -> (Context IO -> IO a)
+    -- ^ Action receiving the fully wired context
+    -> IO a
 withApplication cfg action =
     withDBCF
         (dbPath cfg)

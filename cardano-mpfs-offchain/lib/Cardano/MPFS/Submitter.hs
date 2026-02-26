@@ -2,6 +2,11 @@
 -- Module      : Cardano.MPFS.Submitter
 -- Description : Transaction submission interface
 -- License     : Apache-2.0
+--
+-- Record-of-functions interface for submitting signed
+-- transactions. The real implementation uses node-to-client
+-- LocalTxSubmission ("Cardano.MPFS.Submitter.N2C"); the
+-- mock records submitted transactions in memory.
 module Cardano.MPFS.Submitter
     ( -- * Submitter interface
       Submitter (..)

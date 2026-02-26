@@ -6,11 +6,17 @@
 -- Description : Block processor for cage protocol events
 -- License     : Apache-2.0
 --
--- Processes Cardano blocks for cage-protocol events:
--- extracts Conway transactions, detects cage events
--- via 'detectCageEvents', applies state changes and
--- trie mutations, and records inverse operations for
--- rollback support.
+-- Core block-processing pipeline for the cage indexer.
+-- For each block received via ChainSync:
+--
+--   1. Extract Conway-era transactions ('extractConwayTxs')
+--   2. Resolve spent UTxOs and detect cage events ('detectFromTx')
+--   3. For each event, compute inverse ops, then apply state and
+--      trie mutations ('applyCageEvent')
+--   4. Return collected inverse ops for rollback storage
+--
+-- Rollback is handled by 'applyCageInverses', which
+-- replays inverse ops in reverse order.
 module Cardano.MPFS.Indexer.Follower
     ( -- * Block processing
       processCageBlock
@@ -109,8 +115,11 @@ processCageBlock scriptHash st tm resolveUtxo block = do
 -- | Detect cage events from a single transaction.
 detectFromTx
     :: ScriptHash
+    -- ^ Cage script hash
     -> (TxIn -> IO (Maybe (TxOut ConwayEra)))
+    -- ^ UTxO resolver for spent inputs
     -> Tx ConwayEra
+    -- ^ Transaction to inspect
     -> IO [CageEvent]
 detectFromTx scriptHash resolveUtxo tx = do
     let inputSet = tx ^. bodyTxL . inputsTxBodyL
@@ -256,8 +265,11 @@ applyCageEvent st tm = \case
 -- inverse ops that can undo the mutation.
 applyRequestOp
     :: TokenId
+    -- ^ Token owning the trie
     -> Trie IO
+    -- ^ Handle to the token's trie
     -> Request
+    -- ^ Request whose operation to apply
     -> IO [CageInverseOp]
 applyRequestOp
     tid
@@ -306,11 +318,15 @@ applyRequestOp
                         ]
 
 -- | Apply inverse operations for rollback, restoring
--- the state to what it was before the events.
+-- the state to what it was before the events. Ops
+-- should be applied in reverse chronological order.
 applyCageInverses
     :: State IO
+    -- ^ Cage state interface
     -> TrieManager IO
+    -- ^ Trie manager for per-token tries
     -> [CageInverseOp]
+    -- ^ Inverse ops to replay
     -> IO ()
 applyCageInverses st tm = mapM_ applyInv
   where

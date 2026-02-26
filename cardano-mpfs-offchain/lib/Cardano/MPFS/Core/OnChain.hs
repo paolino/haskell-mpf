@@ -12,6 +12,15 @@
 -- These types use Plutus primitives directly (not
 -- cardano-ledger types) because they model the exact
 -- on-chain data layout expected by the Aiken validator.
+-- The 'ToData'\/'FromData' instances are hand-written
+-- (not TH-derived) to guarantee constructor indices and
+-- field ordering match the Aiken source byte-for-byte.
+--
+-- The module also provides the hard-coded cage
+-- 'cageScriptHash' and helpers to derive asset names
+-- and addresses from it. See "Cardano.MPFS.Core.Types"
+-- for the higher-level domain types that the rest of the
+-- offchain service operates on.
 module Cardano.MPFS.Core.OnChain
     ( -- * On-chain datum\/redeemer types
       CageDatum (..)
@@ -92,7 +101,9 @@ newtype OnChainTokenId = OnChainTokenId
 -- @cardano/transaction/OutputReference@.
 data OnChainTxOutRef = OnChainTxOutRef
     { txOutRefId :: !BuiltinByteString
+    -- ^ Transaction hash (32 bytes)
     , txOutRefIdx :: !Integer
+    -- ^ Output index within the transaction
     }
     deriving stock (Show, Eq)
 
@@ -106,22 +117,36 @@ newtype OnChainRoot = OnChainRoot
 -- Matches Aiken @types/Operation@.
 data OnChainOperation
     = -- | Insert a new key-value pair (Constr 0)
-      OpInsert !ByteString
+      OpInsert
+        !ByteString
+        -- ^ Value to insert
     | -- | Delete a key (Constr 1)
-      OpDelete !ByteString
+      OpDelete
+        !ByteString
+        -- ^ Old value being removed (needed for proof)
     | -- | Update an existing key (Constr 2)
-      OpUpdate !ByteString !ByteString
+      OpUpdate
+        !ByteString
+        -- ^ Old value being replaced
+        !ByteString
+        -- ^ New value
     deriving stock (Show, Eq)
 
 -- | On-chain request to modify a token's trie.
 -- Matches Aiken @types/Request@.
 data OnChainRequest = OnChainRequest
     { requestToken :: !OnChainTokenId
+    -- ^ Token whose trie is being modified
     , requestOwner :: !BuiltinByteString
+    -- ^ Payment key hash of the requester (28 bytes)
     , requestKey :: !ByteString
+    -- ^ Trie key to operate on
     , requestValue :: !OnChainOperation
+    -- ^ The insert\/delete\/update operation
     , requestFee :: !Integer
+    -- ^ Fee (in lovelace) the requester agrees to pay
     , requestSubmittedAt :: !Integer
+    -- ^ POSIX time (ms) when the request was submitted
     }
     deriving stock (Show, Eq)
 
@@ -129,10 +154,15 @@ data OnChainRequest = OnChainRequest
 -- @types/State@ (5 fields).
 data OnChainTokenState = OnChainTokenState
     { stateOwner :: !BuiltinByteString
+    -- ^ Payment key hash of the token owner (28 bytes)
     , stateRoot :: !OnChainRoot
+    -- ^ Current Merkle root of the token's trie
     , stateMaxFee :: !Integer
+    -- ^ Maximum fee (lovelace) charged per request
     , stateProcessTime :: !Integer
+    -- ^ Oracle processing window duration (ms)
     , stateRetractTime :: !Integer
+    -- ^ Requester retract window duration (ms)
     }
     deriving stock (Show, Eq)
 
@@ -164,6 +194,7 @@ data MintRedeemer
 -- @types/Mint@.
 newtype Mint = Mint
     { mintAsset :: OnChainTxOutRef
+    -- ^ UTxO consumed to derive the unique asset name
     }
     deriving stock (Show, Eq)
 
@@ -171,7 +202,9 @@ newtype Mint = Mint
 -- @types/Migration@.
 data Migration = Migration
     { migrationOldPolicy :: !BuiltinByteString
+    -- ^ Policy ID of the old cage validator being migrated from
     , migrationTokenId :: !OnChainTokenId
+    -- ^ Token being migrated to the new policy
     }
     deriving stock (Show, Eq)
 
@@ -197,26 +230,36 @@ data ProofStep
     = -- | Branch step (Constr 0)
       Branch
         { branchSkip :: !Integer
+        -- ^ Number of shared nibbles to skip
         , branchNeighbors :: !ByteString
+        -- ^ Concatenated neighbor hashes (4 x 32 bytes)
         }
     | -- | Fork step (Constr 1)
       Fork
         { forkSkip :: !Integer
+        -- ^ Number of shared nibbles to skip
         , forkNeighbor :: !Neighbor
+        -- ^ The sibling branch at the fork point
         }
     | -- | Leaf step (Constr 2)
       Leaf
         { leafSkip :: !Integer
+        -- ^ Number of shared nibbles to skip
         , leafKey :: !ByteString
+        -- ^ Remaining key suffix at the leaf
         , leafValue :: !ByteString
+        -- ^ Value hash stored at the leaf
         }
     deriving stock (Show, Eq)
 
 -- | Neighbor node in a fork proof step.
 data Neighbor = Neighbor
     { neighborNibble :: !Integer
+    -- ^ Hex digit (0–15) identifying the fork branch
     , neighborPrefix :: !ByteString
+    -- ^ Common prefix nibbles of the neighbor subtree
     , neighborRoot :: !ByteString
+    -- ^ Merkle root hash of the neighbor subtree
     }
     deriving stock (Show, Eq)
 
@@ -224,22 +267,30 @@ data Neighbor = Neighbor
 -- Helpers for manual Data construction
 -- ---------------------------------------------------------
 
+-- | Wrap a raw 'Data' value as 'BuiltinData'.
 mkD :: Data -> BuiltinData
 mkD = BuiltinData
 
+-- | Unwrap 'BuiltinData' to the raw 'Data' AST.
 unD :: BuiltinData -> Data
 unD (BuiltinData d) = d
 
+-- | Lift a 'ByteString' into a 'Data' byte-literal.
 bsToD :: ByteString -> Data
 bsToD = B
 
+-- | Extract a 'ByteString' from a 'Data' byte-literal.
 bsFromD :: Data -> Maybe ByteString
 bsFromD (B bs) = Just bs
 bsFromD _ = Nothing
 
+-- | Lift a 'BuiltinByteString' into a 'Data'
+-- byte-literal.
 bbsToD :: BuiltinByteString -> Data
 bbsToD (BuiltinByteString bs) = B bs
 
+-- | Extract a 'BuiltinByteString' from a 'Data'
+-- byte-literal.
 bbsFromD :: Data -> Maybe BuiltinByteString
 bbsFromD (B bs) = Just (BuiltinByteString bs)
 bbsFromD _ = Nothing
@@ -710,7 +761,10 @@ cagePolicyId :: PolicyID
 cagePolicyId = PolicyID cageScriptHashLedger
 
 -- | Cage script address for a given network.
-cageAddr :: Network -> Addr
+cageAddr
+    :: Network
+    -- ^ Cardano network (mainnet or testnet)
+    -> Addr
 cageAddr net =
     Addr
         net
@@ -753,5 +807,7 @@ deriveAssetName OnChainTxOutRef{txOutRefId, txOutRefIdx} =
 -- | Load and parse a CIP-57 blueprint from a file
 -- path. Returns the parsed 'Blueprint' on success.
 loadCageScript
-    :: FilePath -> IO (Either String Blueprint)
+    :: FilePath
+    -- ^ Path to the @plutus.json@ blueprint file
+    -> IO (Either String Blueprint)
 loadCageScript = loadBlueprint

@@ -2,6 +2,11 @@
 -- Module      : Cardano.MPFS.TxBuilder.Real.End
 -- Description : End token (burn) transaction
 -- License     : Apache-2.0
+--
+-- Builds the burn transaction that retires an MPFS
+-- cage token. Consumes the State UTxO with an @End@
+-- spending redeemer, mints -1 with @Burning@, and
+-- returns remaining ADA to the owner.
 module Cardano.MPFS.TxBuilder.Real.End
     ( endTokenImpl
     ) where
@@ -74,9 +79,13 @@ import Cardano.Ledger.Api.Tx.Out (coinTxOutL)
 -- destroyed.
 endTokenImpl
     :: CageConfig
+    -- ^ Cage script config
     -> Provider IO
+    -- ^ Blockchain query interface
     -> TokenId
+    -- ^ Token to retire
     -> Addr
+    -- ^ Fee-paying address (receives remaining ADA)
     -> IO (Tx ConwayEra)
 endTokenImpl cfg prov tid addr = do
     -- 1. Query cage UTxOs

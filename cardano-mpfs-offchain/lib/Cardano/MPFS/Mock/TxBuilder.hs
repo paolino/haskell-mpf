@@ -3,10 +3,13 @@
 -- Description : No-op mock TxBuilder implementation
 -- License     : Apache-2.0
 --
--- Provides a mock 'TxBuilder IO' that throws on all
--- operations. Transaction building requires real
--- protocol params and UTxOs; the mock is a
--- placeholder for type-checking and wiring tests.
+-- Stub implementation of the 'TxBuilder' interface.
+-- All operations throw with a descriptive error.
+-- Transaction building requires real protocol
+-- parameters and UTxOs, so this mock exists purely
+-- as a placeholder for type-checking and wiring
+-- tests. See "Cardano.MPFS.TxBuilder.Real" for the
+-- production implementation.
 module Cardano.MPFS.Mock.TxBuilder
     ( -- * Construction
       mkMockTxBuilder

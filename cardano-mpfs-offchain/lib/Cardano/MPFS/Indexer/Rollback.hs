@@ -3,10 +3,13 @@
 -- Description : Rollback to a previous slot
 -- License     : Apache-2.0
 --
--- Implements slot-based rollback by replaying inverse
--- operations stored per block. Uses the rollbackSlots
--- list in the checkpoint to find which slots need
--- reverting (all slots > targetSlot).
+-- Slot-based rollback for the cage indexer. Inverse
+-- operations are stored per-slot by 'storeRollback'
+-- and replayed in reverse order by 'rollbackToSlot'
+-- when ChainSync reports a rollback event. The set
+-- of active slots is tracked in the checkpoint (see
+-- "Cardano.MPFS.Indexer.Columns"), bounded by the
+-- security parameter (k ≈ 2160).
 module Cardano.MPFS.Indexer.Rollback
     ( -- * Rollback
       rollbackToSlot
@@ -45,8 +48,11 @@ import Database.KV.Transaction
 -- | Store inverse ops for a block at a given slot.
 storeRollback
     :: RunTransaction IO cf AllColumns op
+    -- ^ Transaction runner
     -> SlotNo
+    -- ^ Slot of the block
     -> [CageInverseOp]
+    -- ^ Inverse operations to store
     -> IO ()
 storeRollback RunTransaction{runTransaction = run} slot invs =
     run
@@ -58,7 +64,9 @@ storeRollback RunTransaction{runTransaction = run} slot invs =
 -- | Load inverse ops for a given slot.
 loadRollback
     :: RunTransaction IO cf AllColumns op
+    -- ^ Transaction runner
     -> SlotNo
+    -- ^ Slot to load ops for
     -> IO (Maybe [CageInverseOp])
 loadRollback RunTransaction{runTransaction = run} slot =
     run $ do
@@ -68,7 +76,9 @@ loadRollback RunTransaction{runTransaction = run} slot =
 -- | Delete stored inverse ops for a given slot.
 deleteRollback
     :: RunTransaction IO cf AllColumns op
+    -- ^ Transaction runner
     -> SlotNo
+    -- ^ Slot whose ops to delete
     -> IO ()
 deleteRollback RunTransaction{runTransaction = run} slot =
     run $ delete CageRollbacks slot

@@ -100,6 +100,14 @@ e2e match="":
 docs:
     mkdocs serve
 
+# Serve hoogle (all dependencies, from nix shell)
+hoogle port="8080":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Serving hoogle on http://localhost:{{ port }}"
+    echo "(includes all dependencies; local packages not yet indexed — see issue #59)"
+    hoogle server --local --port={{ port }}
+
 # Clean build artifacts
 clean:
     #!/usr/bin/env bash

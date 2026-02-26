@@ -7,11 +7,11 @@
 -- License     : Apache-2.0
 --
 -- Implements the 'State' interface on top of
--- RocksDB via @rocksdb-kv-transactions@.
--- Each operation runs in its own serialized
--- transaction. For atomic block processing (where
--- multiple operations must commit together), use
--- the 'Transaction' monad directly.
+-- RocksDB via @rocksdb-kv-transactions@. Each
+-- individual operation (get, put, remove, list) runs
+-- in its own serialized transaction. Column families
+-- are defined in "Cardano.MPFS.Indexer.Columns" and
+-- serialization codecs in "Cardano.MPFS.Indexer.Codecs".
 module Cardano.MPFS.Indexer.Persistent
     ( -- * Construction
       mkPersistentState
@@ -47,6 +47,7 @@ import Cardano.MPFS.State
 -- transaction via 'RunTransaction'.
 mkPersistentState
     :: RunTransaction IO cf AllColumns op
+    -- ^ Transaction runner from @rocksdb-kv-transactions@
     -> State IO
 mkPersistentState rt =
     State

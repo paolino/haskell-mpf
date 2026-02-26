@@ -4,6 +4,12 @@
 -- Module      : Cardano.MPFS.TxBuilder.Real.Request
 -- Description : Request insert/delete transactions
 -- License     : Apache-2.0
+--
+-- Builds request transactions for inserting or
+-- deleting a key in a token's trie. No script
+-- execution occurs — the transaction simply pays to
+-- the cage address with an inline 'RequestDatum'.
+-- The locked ADA includes the token's @maxFee@.
 module Cardano.MPFS.TxBuilder.Real.Request
     ( requestInsertImpl
     , requestDeleteImpl
@@ -55,12 +61,19 @@ import Cardano.MPFS.TxBuilder.Real.Internal
 -- address with an inline 'RequestDatum'.
 requestInsertImpl
     :: CageConfig
+    -- ^ Cage script config
     -> Provider IO
+    -- ^ Blockchain query interface
     -> State IO
+    -- ^ Token state (to look up maxFee)
     -> TokenId
+    -- ^ Token whose trie to modify
     -> ByteString
+    -- ^ Key to insert
     -> ByteString
+    -- ^ Value to insert
     -> Addr
+    -- ^ Requester's address (pays fee, owns request)
     -> IO (Tx ConwayEra)
 requestInsertImpl cfg prov st tid key value addr =
     do
@@ -112,11 +125,17 @@ requestInsertImpl cfg prov st tid key value addr =
 -- Same structure as requestInsert with 'OpDelete'.
 requestDeleteImpl
     :: CageConfig
+    -- ^ Cage script config
     -> Provider IO
+    -- ^ Blockchain query interface
     -> State IO
+    -- ^ Token state (to look up maxFee)
     -> TokenId
+    -- ^ Token whose trie to modify
     -> ByteString
+    -- ^ Key to delete
     -> Addr
+    -- ^ Requester's address
     -> IO (Tx ConwayEra)
 requestDeleteImpl cfg prov st tid key addr = do
     mTs <- getToken (tokens st) tid

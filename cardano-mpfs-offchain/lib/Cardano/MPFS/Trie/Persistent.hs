@@ -8,12 +8,25 @@
 -- Description : RocksDB-backed TrieManager with token-prefixed keys
 -- License     : Apache-2.0
 --
--- Provides a 'TrieManager IO' backed by shared
--- RocksDB column families. Each token's trie data
--- is isolated by prefixing all keys with the
--- serialized 'TokenId'. Uses MPF operations
--- through a custom 'Database' that handles
--- prefixing transparently.
+-- Production implementation of the 'TrieManager'
+-- interface backed by shared RocksDB column
+-- families (@trie-nodes@ and @trie-kv@). Multiple
+-- tokens share the same column families — isolation
+-- is achieved by prefixing every key with a
+-- length-prefixed serialization of the 'TokenId'.
+--
+-- The prefix is @(1-byte length ++ raw asset name)@,
+-- so iterators can scan only a single token's
+-- entries. A 'mkPrefixedTrieDB' wraps the raw
+-- RocksDB handle into a @rocksdb-kv-transactions@
+-- 'Database' that prepends and strips the prefix
+-- transparently.
+--
+-- Speculative sessions use 'runSpeculation' which
+-- reads from the real database but buffers writes
+-- in memory, discarding them after the callback
+-- returns. This is used by 'updateTokenImpl' to
+-- generate proofs without mutating state.
 module Cardano.MPFS.Trie.Persistent
     ( -- * Construction
       mkPersistentTrieManager
@@ -167,7 +180,9 @@ mkPersistentTrieManager db nodesCF kvCF = do
 -- closes the database.
 withPersistentTrieManager
     :: FilePath
+    -- ^ Path to the RocksDB database directory
     -> (TrieManager IO -> IO a)
+    -- ^ Action receiving the trie manager
     -> IO a
 withPersistentTrieManager path action =
     withDBCF

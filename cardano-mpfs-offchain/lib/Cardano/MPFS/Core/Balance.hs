@@ -5,9 +5,16 @@
 -- Description : Simple transaction balancing
 -- License     : Apache-2.0
 --
--- Balance a transaction by adding a fee-paying UTxO
--- and a change output. The fee is estimated via
--- 'setMinFeeTx' from @cardano-ledger-api@.
+-- Balance an unsigned Conway-era transaction by adding
+-- fee-paying inputs and a change output. The fee is
+-- estimated iteratively via 'estimateMinFeeTx' from
+-- @cardano-ledger-api@ until the value converges
+-- (at most 10 rounds).
+--
+-- This is a simplified balancer that only handles
+-- ADA-only fee inputs. Multi-asset coin selection is
+-- out of scope — callers construct the script inputs
+-- and this module adds the fee delta.
 module Cardano.MPFS.Core.Balance
     ( -- * Balancing
       balanceTx

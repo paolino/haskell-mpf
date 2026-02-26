@@ -2,6 +2,15 @@
 -- Module      : Cardano.MPFS.TxBuilder
 -- Description : Transaction construction interface
 -- License     : Apache-2.0
+--
+-- Record-of-functions interface for building MPFS
+-- protocol transactions. Each method corresponds to a
+-- cage-protocol action (boot, request insert\/delete,
+-- update, retract, end). The real implementation lives
+-- in "Cardano.MPFS.TxBuilder.Real"; the mock in
+-- "Cardano.MPFS.Mock.TxBuilder". Returned transactions
+-- are unsigned — callers add key witnesses before
+-- submission.
 module Cardano.MPFS.TxBuilder
     ( -- * Transaction builder interface
       TxBuilder (..)

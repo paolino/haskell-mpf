@@ -3,9 +3,19 @@
 -- Description : Pure in-memory Trie backed by merkle-patricia-forestry
 -- License     : Apache-2.0
 --
--- Provides a 'Trie IO' implementation backed by an
--- 'IORef' holding an 'MPFInMemoryDB'. Useful for
--- testing and development without a real database.
+-- In-memory implementation of the 'Trie' interface
+-- backed by an 'IORef' holding an 'MPFInMemoryDB'
+-- from the @merkle-patricia-forestry@ library.
+--
+-- All keys and values are hashed through MPF
+-- conventions ('mkMPFHash') so proof paths match
+-- what the Aiken on-chain validator expects.
+--
+-- Use 'mkPureTrie' for standalone testing, or
+-- 'mkPureTrieFromRef' when sharing the underlying
+-- database with a 'PureManager' (see
+-- "Cardano.MPFS.Trie.PureManager").
+-- For production use "Cardano.MPFS.Trie.Persistent".
 module Cardano.MPFS.Trie.Pure
     ( -- * Construction
       mkPureTrie

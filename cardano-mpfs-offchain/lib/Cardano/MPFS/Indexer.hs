@@ -2,6 +2,16 @@
 -- Module      : Cardano.MPFS.Indexer
 -- Description : Chain sync follower interface
 -- License     : Apache-2.0
+--
+-- Record-of-functions interface for the chain sync
+-- indexer. The indexer follows the blockchain via
+-- ChainSync, detects cage-protocol events (boot,
+-- request, update, retract, end), and updates
+-- 'State' and 'TrieManager' accordingly.
+--
+-- See "Cardano.MPFS.Indexer.Follower" for the real
+-- implementation and "Cardano.MPFS.Mock.Indexer"
+-- for the test stub.
 module Cardano.MPFS.Indexer
     ( -- * Indexer interface
       Indexer (..)

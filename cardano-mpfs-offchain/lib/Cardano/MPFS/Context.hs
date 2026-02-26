@@ -2,6 +2,14 @@
 -- Module      : Cardano.MPFS.Context
 -- Description : Facade bundling all singleton interfaces
 -- License     : Apache-2.0
+--
+-- Top-level product type that bundles every service
+-- interface into a single value. Constructed once at
+-- application startup (see "Cardano.MPFS.Application")
+-- and threaded to all callers. Parametric in the
+-- effect @m@ so both real ('IO') and mock
+-- ('Control.Monad.State.Strict.StateT') code share
+-- the same record shape.
 module Cardano.MPFS.Context
     ( -- * Context
       Context (..)

@@ -5,9 +5,16 @@
 -- Description : Pure in-memory TrieManager
 -- License     : Apache-2.0
 --
--- Provides a 'TrieManager IO' backed by a 'Map' of
--- per-token 'IORef' databases. Useful for testing
--- and development.
+-- In-memory implementation of the 'TrieManager'
+-- interface backed by a 'Map TokenId (IORef
+-- MPFInMemoryDB)'. Each token gets its own isolated
+-- in-memory MPF database; speculative sessions copy
+-- the 'IORef' contents so the original is never
+-- mutated.
+--
+-- Useful for unit tests and development where
+-- RocksDB is not available or not desired. For
+-- production use "Cardano.MPFS.Trie.Persistent".
 module Cardano.MPFS.Trie.PureManager
     ( -- * Construction
       mkPureTrieManager

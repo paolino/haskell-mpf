@@ -5,9 +5,14 @@
 -- Description : Type aliases for N2C node client
 -- License     : Apache-2.0
 --
--- Type aliases and channel types for communicating
--- with the node-to-client Ouroboros protocols:
--- LocalStateQuery and LocalTxSubmission.
+-- Type aliases, channel types, and request wrappers for
+-- communicating with the Cardano node via the
+-- node-to-client Ouroboros mini-protocols:
+-- LocalStateQuery (UTxO and protocol-parameter queries)
+-- and LocalTxSubmission (signed transaction submission).
+--
+-- Communication is channel-based: callers enqueue requests
+-- into a 'TBQueue' and block on a 'TMVar' for the result.
 module Cardano.MPFS.NodeClient.Types
     ( -- * Block types
       Block

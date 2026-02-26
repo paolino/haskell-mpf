@@ -5,9 +5,12 @@
 -- Description : N2C connection with LSQ + LTxS
 -- License     : Apache-2.0
 --
--- Establishes a node-to-client connection via Unix
--- socket, multiplexing LocalStateQuery (num 7) and
--- LocalTxSubmission (num 6).
+-- Establishes a node-to-client (N2C) connection via
+-- Unix socket, multiplexing two mini-protocols:
+-- LocalStateQuery (num 7) for UTxO and protocol
+-- parameter queries, and LocalTxSubmission (num 6)
+-- for signed transaction submission. The connection
+-- blocks until closed — run in a background thread.
 module Cardano.MPFS.NodeClient.Connection
     ( -- * Connection
       runNodeClient
@@ -121,10 +124,13 @@ maxLimits =
 -- 'Control.Concurrent.Async.async'.
 runNodeClient
     :: NetworkMagic
+    -- ^ Network magic (e.g. mainnet = 764824073)
     -> FilePath
     -- ^ Path to the node Unix socket
     -> LSQChannel
+    -- ^ Channel for LocalStateQuery requests
     -> LTxSChannel
+    -- ^ Channel for LocalTxSubmission requests
     -> IO (Either SomeException ())
 runNodeClient magic socketPath lsqCh ltxsCh =
     withIOManager $ \ioManager ->
@@ -231,14 +237,20 @@ lsqCodec =
 
 -- | Create a new 'LSQChannel' with the given queue
 -- capacity.
-newLSQChannel :: Int -> IO LSQChannel
+newLSQChannel
+    :: Int
+    -- ^ Maximum number of queued queries
+    -> IO LSQChannel
 newLSQChannel capacity =
     LSQChannel
         <$> newTBQueueIO (fromIntegral capacity)
 
 -- | Create a new 'LTxSChannel' with the given queue
 -- capacity.
-newLTxSChannel :: Int -> IO LTxSChannel
+newLTxSChannel
+    :: Int
+    -- ^ Maximum number of queued submissions
+    -> IO LTxSChannel
 newLTxSChannel capacity =
     LTxSChannel
         <$> newTBQueueIO (fromIntegral capacity)

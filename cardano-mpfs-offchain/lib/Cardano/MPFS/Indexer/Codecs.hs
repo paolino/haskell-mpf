@@ -9,14 +9,15 @@
 -- Description : CBOR serialization codecs for indexer columns
 -- License     : Apache-2.0
 --
--- Provides 'Prism''-based codecs for encoding and
--- decoding indexer column keys and values to/from
--- 'ByteString'. Uses CBOR via @cborg@ for
--- structured types. Ledger types ('TxIn', 'Coin',
--- 'KeyHash') are serialized to bytes via
--- @cardano-ledger-binary@ and embedded as CBOR
--- byte strings. Trie columns use identity codecs
--- (raw 'ByteString' passthrough).
+-- 'Prism''-based codecs for encoding and decoding
+-- indexer column keys and values to\/from
+-- 'ByteString'. Uses CBOR via @cborg@ for structured
+-- types. Ledger types ('TxIn', 'Coin', 'KeyHash')
+-- are serialized via @cardano-ledger-binary@ (version
+-- 2) and embedded as CBOR byte strings within the
+-- outer encoding. Trie columns use identity codecs
+-- (raw 'ByteString' passthrough) since the MPF
+-- library handles its own serialization.
 module Cardano.MPFS.Indexer.Codecs
     ( -- * Column codecs
       allCodecs

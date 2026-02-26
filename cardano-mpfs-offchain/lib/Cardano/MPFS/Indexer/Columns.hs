@@ -8,11 +8,18 @@
 -- License     : Apache-2.0
 --
 -- Type-safe column family definitions for the
--- indexer's RocksDB-backed persistent state. Each
--- constructor selects a column with its key-value
--- types enforced at the type level. Covers cage
--- state (tokens, requests, checkpoint), rollback
--- storage, and trie storage (nodes, key-value pairs).
+-- indexer's RocksDB-backed persistent state using
+-- @rocksdb-kv-transactions@. Each 'AllColumns'
+-- constructor selects a RocksDB column family with
+-- its key-value types enforced at the type level via
+-- the 'KV' kind. Six column families cover:
+--
+--   * Cage state: 'CageTokens', 'CageRequests', 'CageCfg'
+--   * Rollback storage: 'CageRollbacks'
+--   * Trie storage: 'TrieNodes', 'TrieKV'
+--
+-- Serialization codecs for these columns live in
+-- "Cardano.MPFS.Indexer.Codecs".
 module Cardano.MPFS.Indexer.Columns
     ( -- * Column selector
       AllColumns (..)

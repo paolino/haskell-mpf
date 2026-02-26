@@ -2,6 +2,13 @@
 -- Module      : Cardano.MPFS.TxBuilder.Real.Retract
 -- Description : Retract request transaction
 -- License     : Apache-2.0
+--
+-- Builds the retract transaction that cancels a
+-- pending request. The requester spends their request
+-- UTxO (recovering locked ADA) while referencing the
+-- State UTxO. Validity interval is Phase 2:
+-- @entirely_after(submitted_at + process_time)@ and
+-- @entirely_before(submitted_at + process_time + retract_time)@.
 module Cardano.MPFS.TxBuilder.Real.Retract
     ( retractRequestImpl
     ) where
@@ -82,10 +89,15 @@ import PlutusTx.Builtins.Internal
 -- state UTxO. Requires Phase 2 validity.
 retractRequestImpl
     :: CageConfig
+    -- ^ Cage script config
     -> Provider IO
+    -- ^ Blockchain query interface
     -> State IO
+    -- ^ Request state (to look up the request)
     -> TxIn
+    -- ^ UTxO reference of the request to retract
     -> Addr
+    -- ^ Requester's address (receives refund)
     -> IO (Tx ConwayEra)
 retractRequestImpl cfg prov st reqTxIn addr = do
     -- 1. Look up the request to find its token

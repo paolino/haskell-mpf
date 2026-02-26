@@ -5,9 +5,13 @@
 -- Description : No-op mock Submitter implementation
 -- License     : Apache-2.0
 --
--- Provides a mock 'Submitter IO' that always reports
--- rejection. Useful for testing components that
--- build but don't submit transactions.
+-- Stub implementation of the 'Submitter' interface.
+-- Every call to 'submitTx' returns 'Rejected' with
+-- a descriptive message. Useful for unit tests that
+-- exercise transaction construction without
+-- submitting to a real node. See
+-- "Cardano.MPFS.Submitter.N2C" for the production
+-- implementation.
 module Cardano.MPFS.Mock.Submitter
     ( -- * Construction
       mkMockSubmitter

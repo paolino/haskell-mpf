@@ -8,6 +8,9 @@
 --
 -- Codec configuration shared between the
 -- LocalStateQuery and LocalTxSubmission protocols.
+-- Uses @CardanoNodeToClientVersion16@ and a
+-- hard-coded 'EpochSlots' value matching the
+-- @cardano-utxo-csmt@ configuration.
 module Cardano.MPFS.NodeClient.Codecs
     ( -- * Codec config
       ccfg

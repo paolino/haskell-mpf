@@ -3,9 +3,10 @@
 -- Description : LocalTxSubmission protocol client
 -- License     : Apache-2.0
 --
--- A channel-driven LocalTxSubmission client that
--- reads transactions from a 'TBQueue', submits them
--- to the node, and delivers results via 'TMVar'.
+-- Channel-driven LocalTxSubmission client. Reads
+-- 'TxSubmitRequest' values from the 'LTxSChannel'
+-- queue, submits each to the node, and delivers
+-- the accept\/reject result via the request's 'TMVar'.
 module Cardano.MPFS.NodeClient.LocalTxSubmission
     ( -- * Client construction
       mkLocalTxSubmissionClient
@@ -76,7 +77,9 @@ clientIdle ch = do
 -- block until the result is available.
 submitTxN2C
     :: LTxSChannel
+    -- ^ Channel to the LocalTxSubmission client
     -> GenTx Block
+    -- ^ Generalized transaction to submit
     -> IO (Either (ApplyTxErr Block) ())
 submitTxN2C ch tx = do
     resultVar <- newEmptyTMVarIO

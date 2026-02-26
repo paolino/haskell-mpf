@@ -2,6 +2,12 @@
 -- Module      : Cardano.MPFS.TxBuilder.Config
 -- Description : Configuration for real transaction builders
 -- License     : Apache-2.0
+--
+-- Configuration record for the real cage transaction
+-- builders. Holds the applied PlutusV3 script bytes,
+-- computed script hash, default token parameters, and
+-- time-conversion constants needed for validity
+-- interval calculations.
 module Cardano.MPFS.TxBuilder.Config
     ( -- * Configuration
       CageConfig (..)

@@ -6,9 +6,14 @@
 -- Description : N2C-backed Provider via LocalStateQuery
 -- License     : Apache-2.0
 --
--- Provider implementation that queries a Cardano
--- node via the LocalStateQuery mini-protocol for
--- protocol parameters and UTxOs.
+-- Production implementation of the 'Provider'
+-- interface. Queries a local Cardano node via the
+-- N2C LocalStateQuery mini-protocol using an
+-- 'LSQChannel' (see "Cardano.MPFS.NodeClient.Connection").
+--
+-- Protocol parameters and UTxOs are retrieved with
+-- Conway-era queries. An era mismatch (node not yet
+-- in Conway) results in a runtime error.
 module Cardano.MPFS.Provider.NodeClient
     ( -- * Construction
       mkNodeClientProvider
@@ -38,7 +43,10 @@ import Cardano.MPFS.Provider (Provider (..))
 
 -- | Create a 'Provider IO' backed by the N2C
 -- LocalStateQuery protocol.
-mkNodeClientProvider :: LSQChannel -> Provider IO
+mkNodeClientProvider
+    :: LSQChannel
+    -- ^ LocalStateQuery channel to the Cardano node
+    -> Provider IO
 mkNodeClientProvider ch =
     Provider
         { queryProtocolParams = do

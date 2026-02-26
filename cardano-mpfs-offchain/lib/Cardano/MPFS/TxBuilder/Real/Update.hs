@@ -2,6 +2,13 @@
 -- Module      : Cardano.MPFS.TxBuilder.Real.Update
 -- Description : Update token transaction
 -- License     : Apache-2.0
+--
+-- Builds the oracle update transaction that processes
+-- all pending requests for a token. Consumes the State
+-- UTxO and all request UTxOs, applies each operation
+-- speculatively through the trie to generate proofs,
+-- then outputs a new State UTxO with the updated root
+-- and per-request refund outputs.
 module Cardano.MPFS.TxBuilder.Real.Update
     ( updateTokenImpl
     ) where
@@ -94,11 +101,17 @@ import Cardano.MPFS.TxBuilder.Real.Internal
 -- and outputs a new state UTxO with updated root.
 updateTokenImpl
     :: CageConfig
+    -- ^ Cage script config
     -> Provider IO
+    -- ^ Blockchain query interface
     -> State IO
+    -- ^ Token and request state
     -> TrieManager IO
+    -- ^ Trie manager (for speculative proof generation)
     -> TokenId
+    -- ^ Token to process requests for
     -> Addr
+    -- ^ Oracle's address (pays fee, receives fee income)
     -> IO (Tx ConwayEra)
 updateTokenImpl cfg prov _st tm tid addr = do
     -- 1. Query cage UTxOs

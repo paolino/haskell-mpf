@@ -5,8 +5,15 @@
 -- Description : Core domain types for the MPFS offchain service
 -- License     : Apache-2.0
 --
--- Re-exports ledger types and defines MPFS-specific domain
--- types aligned with the on-chain Aiken validators.
+-- Central type vocabulary for the MPFS offchain service.
+-- Re-exports ledger types (Conway era) and defines domain
+-- types that bridge the gap between cardano-ledger
+-- representations and the Aiken on-chain validator layout.
+--
+-- Every module in the @Cardano.MPFS@ hierarchy imports
+-- from here rather than reaching into @cardano-ledger-*@
+-- directly, ensuring a single point of control for era
+-- transitions and type aliases.
 module Cardano.MPFS.Core.Types
     ( -- * Ledger re-exports
       ConwayEra
@@ -81,11 +88,19 @@ newtype Root = Root
 -- | An operation to perform on a key in the trie.
 data Operation
     = -- | Insert a new key-value pair
-      Insert !ByteString
+      Insert
+        !ByteString
+        -- ^ Value to insert
     | -- | Delete a key
-      Delete !ByteString
+      Delete
+        !ByteString
+        -- ^ Old value being deleted (needed for proof)
     | -- | Update an existing key with a new value
-      Update !ByteString !ByteString
+      Update
+        !ByteString
+        -- ^ Old value being replaced
+        !ByteString
+        -- ^ New value to store
     deriving (Eq, Show)
 
 -- | A request to modify a token's trie.

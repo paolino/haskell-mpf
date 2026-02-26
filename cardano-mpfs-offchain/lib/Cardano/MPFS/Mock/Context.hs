@@ -3,9 +3,15 @@
 -- Description : Complete mock Context for testing
 -- License     : Apache-2.0
 --
--- Wires all mock implementations into a complete
--- 'Context IO'. Useful for integration tests and
--- development workflows.
+-- Convenience function that wires all mock
+-- implementations into a complete 'Context IO':
+-- 'mkMockProvider', 'mkMockSubmitter',
+-- 'mkMockTxBuilder', 'mkMockState', 'mkMockIndexer',
+-- and 'mkPureTrieManager'. Useful for integration
+-- tests and development workflows that need a fully
+-- typed 'Context' without any real infrastructure.
+-- See "Cardano.MPFS.Application" for the production
+-- wiring.
 module Cardano.MPFS.Mock.Context
     ( -- * Construction
       mkMockContext

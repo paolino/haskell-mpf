@@ -5,9 +5,13 @@
 -- Description : In-memory mock State implementation
 -- License     : Apache-2.0
 --
--- Provides mock 'Tokens', 'Requests', and
--- 'Checkpoints' implementations backed by 'IORef'
--- maps. Useful for testing and development.
+-- In-memory implementations of the 'Tokens',
+-- 'Requests', and 'Checkpoints' interfaces, each
+-- backed by an 'IORef' holding a 'Map'. Useful for
+-- unit tests and development where persistent
+-- RocksDB state is not desired. See
+-- "Cardano.MPFS.Indexer.Persistent" for the
+-- production implementation.
 module Cardano.MPFS.Mock.State
     ( -- * Construction
       mkMockTokens
