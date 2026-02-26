@@ -27,6 +27,7 @@ import Ouroboros.Consensus.Shelley.Ledger.Mempool
     )
 import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 
+import Cardano.MPFS.Core.Types (ConwayEra)
 import Cardano.MPFS.NodeClient.LocalTxSubmission
     ( submitTxN2C
     )
@@ -38,7 +39,6 @@ import Cardano.MPFS.Submitter
     ( SubmitResult (..)
     , Submitter (..)
     )
-import Cardano.MPFS.Types (ConwayEra)
 import Ouroboros.Consensus.Ledger.SupportsMempool
     ( GenTx
     )

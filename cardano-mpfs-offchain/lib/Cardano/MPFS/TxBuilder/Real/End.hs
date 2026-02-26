@@ -43,22 +43,22 @@ import PlutusTx.Builtins.Internal
     ( BuiltinByteString (..)
     )
 
-import Cardano.MPFS.Balance (balanceTx)
-import Cardano.MPFS.OnChain
+import Cardano.MPFS.Core.Balance (balanceTx)
+import Cardano.MPFS.Core.OnChain
     ( CageDatum (..)
     , MintRedeemer (..)
     , OnChainTokenState (..)
     , UpdateRedeemer (..)
+    )
+import Cardano.MPFS.Core.Types
+    ( ConwayEra
+    , TokenId (..)
     )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
-import Cardano.MPFS.Types
-    ( ConwayEra
-    , TokenId (..)
-    )
 
 import Data.List (sortOn)
 import Data.Ord (Down (..))

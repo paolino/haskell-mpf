@@ -12,7 +12,7 @@ import Data.ByteString.Short (ShortByteString)
 import Cardano.Ledger.BaseTypes (Network)
 import Cardano.Ledger.Hashes (ScriptHash)
 
-import Cardano.MPFS.Types (Coin)
+import Cardano.MPFS.Core.Types (Coin)
 
 -- | Configuration for the cage script transaction
 -- builders.

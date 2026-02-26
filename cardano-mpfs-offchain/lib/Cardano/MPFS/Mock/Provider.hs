@@ -11,8 +11,8 @@ module Cardano.MPFS.Mock.Provider
       mkMockProvider
     ) where
 
+import Cardano.MPFS.Core.Types (ExUnits (..))
 import Cardano.MPFS.Provider (Provider (..))
-import Cardano.MPFS.Types (ExUnits (..))
 
 -- | Create a mock 'Provider IO'. Returns empty UTxO
 -- sets, default protocol params, and zero execution

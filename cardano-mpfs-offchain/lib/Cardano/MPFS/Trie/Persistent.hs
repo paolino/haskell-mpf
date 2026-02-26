@@ -95,20 +95,20 @@ import MPF.Test.Lib
     , mpfHashCodecs
     )
 
-import Cardano.MPFS.OnChain (ProofStep)
-import Cardano.MPFS.Proof
+import Cardano.MPFS.Core.OnChain (ProofStep)
+import Cardano.MPFS.Core.Proof
     ( serializeProof
     , toProofSteps
+    )
+import Cardano.MPFS.Core.Types
+    ( AssetName (..)
+    , Root (..)
+    , TokenId (..)
     )
 import Cardano.MPFS.Trie
     ( Proof (..)
     , Trie (..)
     , TrieManager (..)
-    )
-import Cardano.MPFS.Types
-    ( AssetName (..)
-    , Root (..)
-    , TokenId (..)
     )
 
 -- | Create a persistent 'TrieManager IO' backed by

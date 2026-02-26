@@ -54,8 +54,8 @@ import MPF.Test.Lib
     , verifyMPFM
     )
 
+import Cardano.MPFS.Core.Types (Root (..))
 import Cardano.MPFS.Trie (Trie (..))
-import Cardano.MPFS.Types (Root (..))
 
 -- -----------------------------------------------------------------
 -- Generators

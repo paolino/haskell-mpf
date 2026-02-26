@@ -67,6 +67,7 @@ import Cardano.Ledger.Keys
 import Lens.Micro ((%~), (&))
 import Ouroboros.Network.Magic (NetworkMagic (..))
 
+import Cardano.MPFS.Core.Types (ConwayEra)
 import Cardano.MPFS.E2E.Devnet (withCardanoNode)
 import Cardano.MPFS.NodeClient.Connection
     ( newLSQChannel
@@ -77,7 +78,6 @@ import Cardano.MPFS.NodeClient.Types
     ( LSQChannel
     , LTxSChannel
     )
-import Cardano.MPFS.Types (ConwayEra)
 
 -- | Devnet uses network magic 42.
 devnetMagic :: NetworkMagic

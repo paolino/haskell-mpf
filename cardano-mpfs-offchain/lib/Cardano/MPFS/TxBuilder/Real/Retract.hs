@@ -51,12 +51,16 @@ import Cardano.Ledger.Conway.Scripts
 import Cardano.Ledger.Core (hashScript)
 import Cardano.Ledger.TxIn (TxIn)
 
-import Cardano.MPFS.Balance (balanceTx)
-import Cardano.MPFS.OnChain
+import Cardano.MPFS.Core.Balance (balanceTx)
+import Cardano.MPFS.Core.OnChain
     ( CageDatum (..)
     , OnChainRequest (..)
     , OnChainTokenState (..)
     , UpdateRedeemer (..)
+    )
+import Cardano.MPFS.Core.Types
+    ( ConwayEra
+    , Request (..)
     )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.State
@@ -67,10 +71,6 @@ import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
-import Cardano.MPFS.Types
-    ( ConwayEra
-    , Request (..)
-    )
 import PlutusTx.Builtins.Internal
     ( BuiltinByteString (..)
     )

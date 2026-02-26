@@ -29,9 +29,9 @@ import MPF.Backend.Pure
     , emptyMPFInMemoryDB
     )
 
+import Cardano.MPFS.Core.Types (TokenId)
 import Cardano.MPFS.Trie (Trie, TrieManager (..))
 import Cardano.MPFS.Trie.Pure (mkPureTrieFromRef)
-import Cardano.MPFS.Types (TokenId)
 
 -- | Create a new 'TrieManager IO' backed by a 'Map'
 -- of per-token in-memory MPF databases. Each token

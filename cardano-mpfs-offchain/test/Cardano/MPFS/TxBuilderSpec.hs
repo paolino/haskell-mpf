@@ -76,13 +76,11 @@ import Cardano.Ledger.Plutus.ExUnits
     )
 import Cardano.Ledger.TxIn (TxIn)
 
-import Cardano.MPFS.Blueprint
+import Cardano.MPFS.Core.Blueprint
     ( extractCompiledCode
     , loadBlueprint
     )
-import Cardano.MPFS.Generators (genTxIn)
-import Cardano.MPFS.Mock.State (mkMockState)
-import Cardano.MPFS.OnChain
+import Cardano.MPFS.Core.OnChain
     ( CageDatum (..)
     , OnChainOperation (..)
     , OnChainRequest (..)
@@ -94,6 +92,19 @@ import Cardano.MPFS.OnChain
     , cageScriptHash
     , cageScriptHashLedger
     )
+import Cardano.MPFS.Core.Types
+    ( AssetName (..)
+    , Coin (..)
+    , ConwayEra
+    , Operation (..)
+    , PParams
+    , Request (..)
+    , Root (..)
+    , TokenId (..)
+    , TokenState (..)
+    )
+import Cardano.MPFS.Generators (genTxIn)
+import Cardano.MPFS.Mock.State (mkMockState)
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.State
     ( Requests (..)
@@ -114,17 +125,6 @@ import Cardano.MPFS.TxBuilder.Real
     , mkInlineDatum
     , mkRealTxBuilder
     , toPlcData
-    )
-import Cardano.MPFS.Types
-    ( AssetName (..)
-    , Coin (..)
-    , ConwayEra
-    , Operation (..)
-    , PParams
-    , Request (..)
-    , Root (..)
-    , TokenId (..)
-    , TokenState (..)
     )
 import PlutusTx.Builtins.Internal
     ( BuiltinByteString (..)

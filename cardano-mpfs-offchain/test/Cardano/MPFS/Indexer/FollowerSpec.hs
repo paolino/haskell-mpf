@@ -1,14 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
--- Module      : Cardano.MPFS.Indexer.CageFollowerSpec
+-- Module      : Cardano.MPFS.Indexer.FollowerSpec
 -- Description : Tests for cage block processor
 -- License     : Apache-2.0
 --
 -- Tests for 'applyCageEvent', 'computeInverse',
 -- and 'applyCageInverses' using mock state and
 -- pure trie manager.
-module Cardano.MPFS.Indexer.CageFollowerSpec
+module Cardano.MPFS.Indexer.FollowerSpec
     ( spec
     ) where
 
@@ -24,6 +24,10 @@ import Test.QuickCheck
     , property
     )
 
+import Cardano.MPFS.Core.Types
+    ( Root (..)
+    , TokenState (..)
+    )
 import Cardano.MPFS.Generators
     ( genRequest
     , genRoot
@@ -31,11 +35,11 @@ import Cardano.MPFS.Generators
     , genTokenState
     , genTxIn
     )
-import Cardano.MPFS.Indexer.CageEvent
+import Cardano.MPFS.Indexer.Event
     ( CageEvent (..)
     , CageInverseOp (..)
     )
-import Cardano.MPFS.Indexer.CageFollower
+import Cardano.MPFS.Indexer.Follower
     ( applyCageEvent
     , applyCageInverses
     , computeInverse
@@ -49,10 +53,6 @@ import Cardano.MPFS.State
 import Cardano.MPFS.Trie (TrieManager (..))
 import Cardano.MPFS.Trie.PureManager
     ( mkPureTrieManager
-    )
-import Cardano.MPFS.Types
-    ( Root (..)
-    , TokenState (..)
     )
 
 spec :: Spec

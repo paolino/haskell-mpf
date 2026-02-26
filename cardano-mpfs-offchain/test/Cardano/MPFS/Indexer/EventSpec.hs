@@ -1,8 +1,8 @@
 -- |
--- Module      : Cardano.MPFS.Indexer.CageEventSpec
+-- Module      : Cardano.MPFS.Indexer.EventSpec
 -- Description : Tests for CageEvent inverse operations
 -- License     : Apache-2.0
-module Cardano.MPFS.Indexer.CageEventSpec
+module Cardano.MPFS.Indexer.EventSpec
     ( spec
     ) where
 
@@ -20,6 +20,13 @@ import Test.QuickCheck
     , property
     )
 
+import Cardano.MPFS.Core.Types
+    ( Request (..)
+    , Root (..)
+    , TokenId (..)
+    , TokenState (..)
+    , TxIn
+    )
 import Cardano.MPFS.Generators
     ( genRequest
     , genRoot
@@ -27,17 +34,10 @@ import Cardano.MPFS.Generators
     , genTokenState
     , genTxIn
     )
-import Cardano.MPFS.Indexer.CageEvent
+import Cardano.MPFS.Indexer.Event
     ( CageEvent (..)
     , CageInverseOp (..)
     , inversesOf
-    )
-import Cardano.MPFS.Types
-    ( Request (..)
-    , Root (..)
-    , TokenId (..)
-    , TokenState (..)
-    , TxIn
     )
 
 spec :: Spec

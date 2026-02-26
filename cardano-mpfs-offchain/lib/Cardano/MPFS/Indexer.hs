@@ -10,7 +10,7 @@ module Cardano.MPFS.Indexer
     , ChainTip (..)
     ) where
 
-import Cardano.MPFS.Types (BlockId, SlotNo)
+import Cardano.MPFS.Core.Types (BlockId, SlotNo)
 
 -- | Current chain tip information.
 data ChainTip = ChainTip

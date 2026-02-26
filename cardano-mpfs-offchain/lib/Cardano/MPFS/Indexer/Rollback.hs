@@ -19,22 +19,22 @@ module Cardano.MPFS.Indexer.Rollback
 
 import Control.Monad (forM_)
 
-import Cardano.MPFS.Indexer.CageEvent
-    ( CageInverseOp
-    )
-import Cardano.MPFS.Indexer.CageFollower
-    ( applyCageInverses
-    )
+import Cardano.MPFS.Core.Types (BlockId (..), SlotNo)
 import Cardano.MPFS.Indexer.Columns
     ( AllColumns (..)
     , CageRollbackEntry (..)
+    )
+import Cardano.MPFS.Indexer.Event
+    ( CageInverseOp
+    )
+import Cardano.MPFS.Indexer.Follower
+    ( applyCageInverses
     )
 import Cardano.MPFS.State
     ( Checkpoints (..)
     , State (..)
     )
 import Cardano.MPFS.Trie (TrieManager)
-import Cardano.MPFS.Types (BlockId (..), SlotNo)
 import Database.KV.Transaction
     ( RunTransaction (..)
     , delete

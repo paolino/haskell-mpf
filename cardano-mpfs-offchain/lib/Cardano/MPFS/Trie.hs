@@ -17,8 +17,8 @@ module Cardano.MPFS.Trie
 
 import Data.ByteString (ByteString)
 
-import Cardano.MPFS.OnChain (ProofStep)
-import Cardano.MPFS.Types (Root, TokenId)
+import Cardano.MPFS.Core.OnChain (ProofStep)
+import Cardano.MPFS.Core.Types (Root, TokenId)
 
 -- | Serialised Merkle inclusion proof.
 -- Opaque at this layer; produced by the trie

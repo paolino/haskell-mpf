@@ -325,7 +325,7 @@ From `cardano-utxo-csmt` (library):
 | `NodeClient.LocalStateQuery` (LSQ for UTxOs) | `Query.getValue` on UTxO column |
 | `Mock.State` (IORef maps) | RocksDB columns via `RunTransaction` |
 | `Trie.PureManager` (IORef) | RocksDB columns with token-prefixed keys |
-| `Indexer.Skeleton` (no-op) | Real `Follower` processing blocks |
+| `Mock.Skeleton` (no-op) | Real `Follower` processing blocks |
 
 ### What we keep
 

@@ -60,8 +60,8 @@ import PlutusTx.Builtins.Internal
     ( BuiltinByteString (..)
     )
 
-import Cardano.MPFS.Balance (balanceTx)
-import Cardano.MPFS.OnChain
+import Cardano.MPFS.Core.Balance (balanceTx)
+import Cardano.MPFS.Core.OnChain
     ( CageDatum (..)
     , OnChainOperation (..)
     , OnChainRequest (..)
@@ -69,6 +69,12 @@ import Cardano.MPFS.OnChain
     , OnChainTokenState (..)
     , ProofStep
     , UpdateRedeemer (..)
+    )
+import Cardano.MPFS.Core.Types
+    ( Coin (..)
+    , ConwayEra
+    , Root (..)
+    , TokenId
     )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.State (State (..))
@@ -80,12 +86,6 @@ import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
-import Cardano.MPFS.Types
-    ( Coin (..)
-    , ConwayEra
-    , Root (..)
-    , TokenId
-    )
 
 -- | Build an update-token transaction.
 --

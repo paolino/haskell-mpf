@@ -46,11 +46,7 @@ import Cardano.Ledger.Keys (KeyHash (..), KeyRole (..))
 import Cardano.Ledger.Slot (SlotNo (..))
 import Cardano.Ledger.TxIn (TxId (..), TxIn (..))
 
-import Cardano.MPFS.Indexer.CageEvent
-    ( CageEvent (..)
-    , CageInverseOp (..)
-    )
-import Cardano.MPFS.Types
+import Cardano.MPFS.Core.Types
     ( AssetName (..)
     , BlockId (..)
     , Coin (..)
@@ -59,6 +55,10 @@ import Cardano.MPFS.Types
     , Root (..)
     , TokenId (..)
     , TokenState (..)
+    )
+import Cardano.MPFS.Indexer.Event
+    ( CageEvent (..)
+    , CageInverseOp (..)
     )
 
 -- | Generate a hex string of given byte-length

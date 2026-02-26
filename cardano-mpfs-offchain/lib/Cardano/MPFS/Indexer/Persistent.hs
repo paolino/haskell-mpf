@@ -30,6 +30,7 @@ import Database.KV.Transaction
     , query
     )
 
+import Cardano.MPFS.Core.Types (Request (..))
 import Cardano.MPFS.Indexer.Columns
     ( AllColumns (..)
     , CageCheckpoint (..)
@@ -40,7 +41,6 @@ import Cardano.MPFS.State
     , State (..)
     , Tokens (..)
     )
-import Cardano.MPFS.Types (Request (..))
 
 -- | Create a persistent 'State' backed by RocksDB.
 -- Each operation runs in its own serialized

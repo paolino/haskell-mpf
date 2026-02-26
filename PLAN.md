@@ -63,7 +63,7 @@ All three share a single multiplexed connection.
 
 ### 2. `cardano-mpfs-offchain` — Cardano integration ✓
 
-41 library modules, 12 unit test modules, 5 E2E test modules.
+45 library modules, 12 unit test modules, 5 E2E test modules.
 
 ## Interfaces (record of functions)
 
@@ -178,8 +178,8 @@ Indexer m = Indexer
     }
 ```
 
-Implementation: `Indexer.Skeleton` (lifecycle only).
-`Indexer.CageFollower` (block processing, event detection,
+Implementation: `Mock.Skeleton` (lifecycle only).
+`Indexer.Follower` (block processing, event detection,
 trie mutations, rollback via inverse operations).
 
 ## Key domain types
@@ -303,12 +303,12 @@ graph LR
 - LocalTxSubmission client (`NodeClient.LocalTxSubmission`)
 - Real `Provider.NodeClient` (UTxO queries, protocol params)
 - Real `Submitter.N2C` (tx submission)
-- CIP-57 blueprint loading (`Blueprint`)
+- CIP-57 blueprint loading (`Core.Blueprint`)
 - `Application` wiring module
 
 ### Phase 2 — Transaction Builders + Balance ✓
 
-- On-chain type integration (`OnChain` — datums, redeemers,
+- On-chain type integration (`Core.OnChain` — datums, redeemers,
   policy ID, cage address, PlutusV3 script)
 - `TxBuilder.Real.Boot` — mint cage token
 - `TxBuilder.Real.Request` — submit insert/delete request
@@ -316,8 +316,8 @@ graph LR
 - `TxBuilder.Real.Retract` — cancel pending request
 - `TxBuilder.Real.Internal` — shared helpers, POSIX-to-slot
   conversion (floor + ceiling), ExUnits estimation
-- `Balance` — fee estimation fixpoint, coin selection
-- `Proof` — MPF proof to on-chain ProofStep conversion
+- `Core.Balance` — fee estimation fixpoint, coin selection
+- `Core.Proof` — MPF proof to on-chain ProofStep conversion
 - Unit tests for all tx builders (mock context)
 
 ### Phase 3 — E2E Tests ✓
@@ -340,8 +340,8 @@ graph LR
 - Persistent `TrieManager` backend (`Trie.Persistent`)
   with token-prefixed keys for per-token isolation
 - Cage event detection from transactions
-  (`Indexer.CageEvent.detectCageEvents`)
-- Block processor (`Indexer.CageFollower`) with event
+  (`Indexer.Event.detectCageEvents`)
+- Block processor (`Indexer.Follower`) with event
   application, trie mutations, and inverse operations
   for rollback
 - Application wiring with shared RocksDB instance

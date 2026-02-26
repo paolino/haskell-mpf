@@ -46,7 +46,7 @@ import Cardano.Ledger.Shelley.Genesis
     ( initialFundsPseudoTxIn
     )
 
-import Cardano.MPFS.Bootstrap
+import Cardano.MPFS.Core.Bootstrap
     ( BootstrapHeader (..)
     , foldBootstrapEntries
     )

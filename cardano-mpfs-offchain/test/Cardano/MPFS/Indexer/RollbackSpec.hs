@@ -44,11 +44,22 @@ import Cardano.Ledger.Hashes (unsafeMakeSafeHash)
 import Cardano.Ledger.Keys (KeyHash (..), KeyRole (..))
 import Cardano.Ledger.TxIn qualified as Ledger
 
-import Cardano.MPFS.Indexer.CageEvent
+import Cardano.MPFS.Core.Types
+    ( AssetName (..)
+    , Coin (..)
+    , Operation (..)
+    , Request (..)
+    , Root (..)
+    , SlotNo
+    , TokenId (..)
+    , TokenState (..)
+    , TxIn
+    )
+import Cardano.MPFS.Indexer.Event
     ( CageEvent (..)
     , CageInverseOp (..)
     )
-import Cardano.MPFS.Indexer.CageFollower
+import Cardano.MPFS.Indexer.Follower
     ( applyCageEvent
     , applyCageInverses
     , computeInverse
@@ -62,17 +73,6 @@ import Cardano.MPFS.State
 import Cardano.MPFS.Trie (TrieManager (..))
 import Cardano.MPFS.Trie.PureManager
     ( mkPureTrieManager
-    )
-import Cardano.MPFS.Types
-    ( AssetName (..)
-    , Coin (..)
-    , Operation (..)
-    , Request (..)
-    , Root (..)
-    , SlotNo
-    , TokenId (..)
-    , TokenState (..)
-    , TxIn
     )
 
 -- | Rollback environment: state, trie manager,

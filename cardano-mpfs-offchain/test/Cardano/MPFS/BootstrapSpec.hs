@@ -24,7 +24,7 @@ import Test.Hspec
     , shouldBe
     )
 
-import Cardano.MPFS.Bootstrap
+import Cardano.MPFS.Core.Bootstrap
     ( BootstrapHeader (..)
     , encodeBootstrapFile
     , foldBootstrapEntries

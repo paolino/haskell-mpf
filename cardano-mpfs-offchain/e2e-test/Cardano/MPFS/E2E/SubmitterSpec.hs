@@ -30,7 +30,7 @@ import Cardano.Ledger.BaseTypes
     , StrictMaybe (SJust, SNothing)
     )
 
-import Cardano.MPFS.Balance (balanceTx)
+import Cardano.MPFS.Core.Balance (balanceTx)
 import Cardano.MPFS.E2E.Setup
     ( addKeyWitness
     , genesisAddr

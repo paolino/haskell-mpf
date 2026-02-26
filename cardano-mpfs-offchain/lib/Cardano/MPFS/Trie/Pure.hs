@@ -41,10 +41,10 @@ import MPF.Test.Lib
     , proofMPFM
     )
 
-import Cardano.MPFS.OnChain (ProofStep)
-import Cardano.MPFS.Proof (serializeProof, toProofSteps)
+import Cardano.MPFS.Core.OnChain (ProofStep)
+import Cardano.MPFS.Core.Proof (serializeProof, toProofSteps)
+import Cardano.MPFS.Core.Types (Root (..))
 import Cardano.MPFS.Trie (Proof (..), Trie (..))
-import Cardano.MPFS.Types (Root (..))
 
 -- | Create a new empty 'Trie IO' backed by a fresh
 -- 'IORef' holding an empty in-memory MPF database.

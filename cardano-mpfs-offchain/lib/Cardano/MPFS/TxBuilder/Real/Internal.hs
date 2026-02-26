@@ -136,21 +136,21 @@ import PlutusTx.IsData.Class
     , ToData (..)
     )
 
-import Cardano.MPFS.OnChain
+import Cardano.MPFS.Core.OnChain
     ( CageDatum (..)
     , OnChainOperation (..)
     , OnChainRequest (..)
     , OnChainTokenId (..)
     , OnChainTxOutRef (..)
     )
-import Cardano.MPFS.TxBuilder.Config
-    ( CageConfig (..)
-    )
-import Cardano.MPFS.Types
+import Cardano.MPFS.Core.Types
     ( AssetName (..)
     , ConwayEra
     , PParams
     , TokenId (..)
+    )
+import Cardano.MPFS.TxBuilder.Config
+    ( CageConfig (..)
     )
 
 -- | Convert POSIX time (ms) to a 'SlotNo',

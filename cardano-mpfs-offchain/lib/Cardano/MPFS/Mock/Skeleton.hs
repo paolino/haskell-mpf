@@ -1,5 +1,5 @@
 -- |
--- Module      : Cardano.MPFS.Indexer.Skeleton
+-- Module      : Cardano.MPFS.Mock.Skeleton
 -- Description : Skeleton Indexer with no-op chain sync
 -- License     : Apache-2.0
 --
@@ -7,7 +7,7 @@
 -- management (start\/stop\/pause\/resume) backed by
 -- 'IORef' and 'MVar'. Returns a genesis tip.
 -- Placeholder until csmt chain sync is wired.
-module Cardano.MPFS.Indexer.Skeleton
+module Cardano.MPFS.Mock.Skeleton
     ( -- * Construction
       mkSkeletonIndexer
     ) where
@@ -23,8 +23,8 @@ import Data.IORef
     , writeIORef
     )
 
+import Cardano.MPFS.Core.Types (BlockId (..), SlotNo (..))
 import Cardano.MPFS.Indexer (ChainTip (..), Indexer (..))
-import Cardano.MPFS.Types (BlockId (..), SlotNo (..))
 
 -- | Create a skeleton 'Indexer IO'. Lifecycle
 -- operations are tracked via 'IORef' and 'MVar'

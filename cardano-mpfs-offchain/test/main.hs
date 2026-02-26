@@ -15,9 +15,9 @@ import Cardano.MPFS.Trie.PureManager
 
 import Cardano.MPFS.BalanceSpec qualified as BalanceSpec
 import Cardano.MPFS.BootstrapSpec qualified as BootstrapSpec
-import Cardano.MPFS.Indexer.CageEventSpec qualified as CageEventSpec
-import Cardano.MPFS.Indexer.CageFollowerSpec qualified as CageFollowerSpec
 import Cardano.MPFS.Indexer.CodecsSpec qualified as CodecsSpec
+import Cardano.MPFS.Indexer.EventSpec qualified as CageEventSpec
+import Cardano.MPFS.Indexer.FollowerSpec qualified as CageFollowerSpec
 import Cardano.MPFS.Indexer.InverseSpec qualified as InverseSpec
 import Cardano.MPFS.Indexer.PersistentSpec qualified as PersistentStateSpec
 import Cardano.MPFS.Indexer.RollbackSpec qualified as RollbackSpec

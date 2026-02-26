@@ -1,14 +1,14 @@
 {-# LANGUAGE BangPatterns #-}
 
 -- |
--- Module      : Cardano.MPFS.Balance
+-- Module      : Cardano.MPFS.Core.Balance
 -- Description : Simple transaction balancing
 -- License     : Apache-2.0
 --
 -- Balance a transaction by adding a fee-paying UTxO
 -- and a change output. The fee is estimated via
 -- 'setMinFeeTx' from @cardano-ledger-api@.
-module Cardano.MPFS.Balance
+module Cardano.MPFS.Core.Balance
     ( -- * Balancing
       balanceTx
 
@@ -38,7 +38,7 @@ import Cardano.Ledger.Api.Tx.Out
     )
 import Cardano.Ledger.BaseTypes (Inject (..))
 
-import Cardano.MPFS.Types
+import Cardano.MPFS.Core.Types
     ( Addr
     , Coin (..)
     , ConwayEra

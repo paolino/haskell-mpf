@@ -18,6 +18,11 @@ import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (forAll)
 import Test.QuickCheck.Monadic (assert, monadicIO, run)
 
+import Cardano.MPFS.Core.Types
+    ( Request (..)
+    , Root (..)
+    , TokenState (..)
+    )
 import Cardano.MPFS.Generators
     ( genRequest
     , genRoot
@@ -25,7 +30,7 @@ import Cardano.MPFS.Generators
     , genTokenState
     , genTxIn
     )
-import Cardano.MPFS.Indexer.CageEvent
+import Cardano.MPFS.Indexer.Event
     ( CageEvent (..)
     , CageInverseOp (..)
     , inversesOf
@@ -38,11 +43,6 @@ import Cardano.MPFS.State
     , Requests (..)
     , State (..)
     , Tokens (..)
-    )
-import Cardano.MPFS.Types
-    ( Request (..)
-    , Root (..)
-    , TokenState (..)
     )
 
 -- | Apply a cage event to the state interface.

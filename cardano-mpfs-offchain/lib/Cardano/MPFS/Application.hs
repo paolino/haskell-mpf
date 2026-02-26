@@ -33,16 +33,20 @@ import Database.RocksDB
     )
 import Ouroboros.Network.Magic (NetworkMagic)
 
-import Cardano.MPFS.Bootstrap
+import Cardano.MPFS.Context (Context (..))
+import Cardano.MPFS.Core.Bootstrap
     ( BootstrapHeader (..)
     , foldBootstrapEntries
     )
-import Cardano.MPFS.Context (Context (..))
+import Cardano.MPFS.Core.Types
+    ( BlockId (..)
+    , SlotNo (..)
+    )
 import Cardano.MPFS.Indexer.Codecs (allCodecs)
 import Cardano.MPFS.Indexer.Persistent
     ( mkPersistentState
     )
-import Cardano.MPFS.Indexer.Skeleton
+import Cardano.MPFS.Mock.Skeleton
     ( mkSkeletonIndexer
     )
 import Cardano.MPFS.NodeClient.Connection
@@ -66,10 +70,6 @@ import Cardano.MPFS.TxBuilder.Config
     )
 import Cardano.MPFS.TxBuilder.Real
     ( mkRealTxBuilder
-    )
-import Cardano.MPFS.Types
-    ( BlockId (..)
-    , SlotNo (..)
     )
 
 -- | Application configuration.

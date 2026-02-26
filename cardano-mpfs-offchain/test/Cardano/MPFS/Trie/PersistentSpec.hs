@@ -75,6 +75,10 @@ import MPF.Test.Lib
     , runMPFPure'
     )
 
+import Cardano.MPFS.Core.Types
+    ( Root (..)
+    , TokenId (..)
+    )
 import Cardano.MPFS.Trie
     ( Trie (..)
     , TrieManager (..)
@@ -84,10 +88,6 @@ import Cardano.MPFS.Trie.Persistent
     )
 import Cardano.MPFS.TrieManagerSpec qualified as TrieManagerSpec
 import Cardano.MPFS.TrieSpec qualified as TrieSpec
-import Cardano.MPFS.Types
-    ( Root (..)
-    , TokenId (..)
-    )
 
 -- ---------------------------------------------------------
 -- RocksDB config & helpers

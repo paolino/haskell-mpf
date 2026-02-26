@@ -12,8 +12,8 @@ module Cardano.MPFS.Mock.Indexer
 
 import Data.ByteString qualified as B
 
+import Cardano.MPFS.Core.Types (BlockId (..), SlotNo (..))
 import Cardano.MPFS.Indexer (ChainTip (..), Indexer (..))
-import Cardano.MPFS.Types (BlockId (..), SlotNo (..))
 
 -- | Create a mock 'Indexer IO'. All lifecycle
 -- operations are no-ops. 'getTip' returns slot 0

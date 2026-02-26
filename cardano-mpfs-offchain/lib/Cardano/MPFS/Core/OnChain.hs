@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
--- Module      : Cardano.MPFS.OnChain
+-- Module      : Cardano.MPFS.Core.OnChain
 -- Description : On-chain type encodings for the MPFS cage validator
 -- License     : Apache-2.0
 --
@@ -12,7 +12,7 @@
 -- These types use Plutus primitives directly (not
 -- cardano-ledger types) because they model the exact
 -- on-chain data layout expected by the Aiken validator.
-module Cardano.MPFS.OnChain
+module Cardano.MPFS.Core.OnChain
     ( -- * On-chain datum\/redeemer types
       CageDatum (..)
     , MintRedeemer (..)
@@ -55,7 +55,7 @@ import Cardano.Ledger.Credential
     )
 import Cardano.Ledger.Hashes (ScriptHash (..))
 import Cardano.Ledger.Mary.Value (PolicyID (..))
-import Cardano.MPFS.Blueprint
+import Cardano.MPFS.Core.Blueprint
     ( Blueprint (..)
     , loadBlueprint
     )

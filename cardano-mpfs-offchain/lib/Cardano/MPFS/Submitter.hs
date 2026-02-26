@@ -14,7 +14,7 @@ import Data.ByteString (ByteString)
 
 import Cardano.Ledger.Api.Tx (Tx)
 
-import Cardano.MPFS.Types (ConwayEra, TxId)
+import Cardano.MPFS.Core.Types (ConwayEra, TxId)
 
 -- | Result of submitting a transaction.
 data SubmitResult

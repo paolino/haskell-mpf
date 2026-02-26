@@ -43,18 +43,18 @@ import Cardano.Ledger.Credential
     )
 import Cardano.Ledger.Keys (KeyHash, KeyRole (..))
 
-import Cardano.MPFS.Balance
+import Cardano.MPFS.Core.Balance
     ( BalanceError (..)
     , balanceTx
+    )
+import Cardano.MPFS.Core.Types
+    ( Coin (..)
+    , ConwayEra
+    , PParams
     )
 import Cardano.MPFS.Generators
     ( genKeyHash
     , genTxIn
-    )
-import Cardano.MPFS.Types
-    ( Coin (..)
-    , ConwayEra
-    , PParams
     )
 
 -- | Testnet address from a payment key hash.
@@ -76,7 +76,7 @@ highFeePP =
     emptyPParams & ppMinFeeBL .~ Coin 5_000_000
 
 spec :: Spec
-spec = describe "Cardano.MPFS.Balance" $ do
+spec = describe "Cardano.MPFS.Core.Balance" $ do
     describe "balanceTx" $ do
         it "succeeds when fee UTxO has enough ada"
             $ property propSucceeds

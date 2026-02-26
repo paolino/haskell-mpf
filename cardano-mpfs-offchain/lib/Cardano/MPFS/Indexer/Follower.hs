@@ -2,7 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 
 -- |
--- Module      : Cardano.MPFS.Indexer.CageFollower
+-- Module      : Cardano.MPFS.Indexer.Follower
 -- Description : Block processor for cage protocol events
 -- License     : Apache-2.0
 --
@@ -11,7 +11,7 @@
 -- via 'detectCageEvents', applies state changes and
 -- trie mutations, and records inverse operations for
 -- rollback support.
-module Cardano.MPFS.Indexer.CageFollower
+module Cardano.MPFS.Indexer.Follower
     ( -- * Block processing
       processCageBlock
     , applyCageEvent
@@ -44,7 +44,16 @@ import Ouroboros.Consensus.Shelley.Ledger
     ( ShelleyBlock (..)
     )
 
-import Cardano.MPFS.Indexer.CageEvent
+import Cardano.MPFS.Core.Types
+    ( ConwayEra
+    , Operation (..)
+    , Request (..)
+    , TokenId
+    , TokenState (..)
+    , TxIn
+    , TxOut
+    )
+import Cardano.MPFS.Indexer.Event
     ( CageEvent (..)
     , CageInverseOp (..)
     , detectCageEvents
@@ -58,15 +67,6 @@ import Cardano.MPFS.State
 import Cardano.MPFS.Trie
     ( Trie (..)
     , TrieManager (..)
-    )
-import Cardano.MPFS.Types
-    ( ConwayEra
-    , Operation (..)
-    , Request (..)
-    , TokenId
-    , TokenState (..)
-    , TxIn
-    , TxOut
     )
 
 -- | Extract Conway-era transactions from a multi-era

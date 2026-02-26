@@ -74,21 +74,24 @@ library
 
   exposed-modules:
     Cardano.MPFS.Application
-    Cardano.MPFS.Balance
-    Cardano.MPFS.Blueprint
-    Cardano.MPFS.Bootstrap
     Cardano.MPFS.Context
+    Cardano.MPFS.Core.Balance
+    Cardano.MPFS.Core.Blueprint
+    Cardano.MPFS.Core.Bootstrap
+    Cardano.MPFS.Core.OnChain
+    Cardano.MPFS.Core.Proof
+    Cardano.MPFS.Core.Types
     Cardano.MPFS.Indexer
-    Cardano.MPFS.Indexer.CageEvent
-    Cardano.MPFS.Indexer.CageFollower
     Cardano.MPFS.Indexer.Codecs
     Cardano.MPFS.Indexer.Columns
+    Cardano.MPFS.Indexer.Event
+    Cardano.MPFS.Indexer.Follower
     Cardano.MPFS.Indexer.Persistent
     Cardano.MPFS.Indexer.Rollback
-    Cardano.MPFS.Indexer.Skeleton
     Cardano.MPFS.Mock.Context
     Cardano.MPFS.Mock.Indexer
     Cardano.MPFS.Mock.Provider
+    Cardano.MPFS.Mock.Skeleton
     Cardano.MPFS.Mock.State
     Cardano.MPFS.Mock.Submitter
     Cardano.MPFS.Mock.TxBuilder
@@ -97,8 +100,6 @@ library
     Cardano.MPFS.NodeClient.LocalStateQuery
     Cardano.MPFS.NodeClient.LocalTxSubmission
     Cardano.MPFS.NodeClient.Types
-    Cardano.MPFS.OnChain
-    Cardano.MPFS.Proof
     Cardano.MPFS.Provider
     Cardano.MPFS.Provider.NodeClient
     Cardano.MPFS.State
@@ -117,7 +118,6 @@ library
     Cardano.MPFS.TxBuilder.Real.Request
     Cardano.MPFS.TxBuilder.Real.Retract
     Cardano.MPFS.TxBuilder.Real.Update
-    Cardano.MPFS.Types
 
 executable mpfs-bootstrap-genesis
   import:           warnings
@@ -173,9 +173,9 @@ test-suite unit-tests
     Cardano.MPFS.BalanceSpec
     Cardano.MPFS.BootstrapSpec
     Cardano.MPFS.Generators
-    Cardano.MPFS.Indexer.CageEventSpec
-    Cardano.MPFS.Indexer.CageFollowerSpec
     Cardano.MPFS.Indexer.CodecsSpec
+    Cardano.MPFS.Indexer.EventSpec
+    Cardano.MPFS.Indexer.FollowerSpec
     Cardano.MPFS.Indexer.InverseSpec
     Cardano.MPFS.Indexer.PersistentSpec
     Cardano.MPFS.Indexer.RollbackSpec

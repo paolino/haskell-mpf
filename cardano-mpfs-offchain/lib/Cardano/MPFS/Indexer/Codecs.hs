@@ -70,15 +70,7 @@ import Database.KV.Transaction
     , fromPairList
     )
 
-import Cardano.MPFS.Indexer.CageEvent
-    ( CageInverseOp (..)
-    )
-import Cardano.MPFS.Indexer.Columns
-    ( AllColumns (..)
-    , CageCheckpoint (..)
-    , CageRollbackEntry (..)
-    )
-import Cardano.MPFS.Types
+import Cardano.MPFS.Core.Types
     ( BlockId (..)
     , Operation (..)
     , Request (..)
@@ -87,6 +79,14 @@ import Cardano.MPFS.Types
     , TokenId (..)
     , TokenState (..)
     , TxIn
+    )
+import Cardano.MPFS.Indexer.Columns
+    ( AllColumns (..)
+    , CageCheckpoint (..)
+    , CageRollbackEntry (..)
+    )
+import Cardano.MPFS.Indexer.Event
+    ( CageInverseOp (..)
     )
 
 -- | Codecs for all indexer column families.

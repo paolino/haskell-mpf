@@ -16,7 +16,7 @@ module Cardano.MPFS.State
     , Checkpoints (..)
     ) where
 
-import Cardano.MPFS.Types
+import Cardano.MPFS.Core.Types
     ( BlockId
     , Request
     , SlotNo

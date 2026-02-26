@@ -64,12 +64,21 @@ import Cardano.MPFS.Application
     ( AppConfig (..)
     , withApplication
     )
-import Cardano.MPFS.Blueprint
+import Cardano.MPFS.Context (Context (..))
+import Cardano.MPFS.Core.Blueprint
     ( applyVersion
     , extractCompiledCode
     , loadBlueprint
     )
-import Cardano.MPFS.Context (Context (..))
+import Cardano.MPFS.Core.Types
+    ( Coin (..)
+    , ConwayEra
+    , Operation (..)
+    , Request (..)
+    , Root (..)
+    , TokenId (..)
+    , TokenState (..)
+    )
 import Cardano.MPFS.E2E.Devnet (withCardanoNode)
 import Cardano.MPFS.E2E.Setup
     ( addKeyWitness
@@ -98,15 +107,6 @@ import Cardano.MPFS.TxBuilder.Real.Internal
     ( cageAddrFromCfg
     , cagePolicyIdFromCfg
     , computeScriptHash
-    )
-import Cardano.MPFS.Types
-    ( Coin (..)
-    , ConwayEra
-    , Operation (..)
-    , Request (..)
-    , Root (..)
-    , TokenId (..)
-    , TokenState (..)
     )
 
 -- | Full cage protocol E2E test spec.

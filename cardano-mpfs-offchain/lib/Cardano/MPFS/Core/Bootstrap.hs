@@ -1,5 +1,5 @@
 -- |
--- Module      : Cardano.MPFS.Bootstrap
+-- Module      : Cardano.MPFS.Core.Bootstrap
 -- Description : CBOR bootstrap file for UTxO seeding
 -- License     : Apache-2.0
 --
@@ -8,7 +8,7 @@
 -- is a 3-element CBOR array: slot number, optional
 -- block hash, and an indefinite-length map of
 -- serialized key-value byte pairs.
-module Cardano.MPFS.Bootstrap
+module Cardano.MPFS.Core.Bootstrap
     ( -- * Header
       BootstrapHeader (..)
 

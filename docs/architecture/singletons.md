@@ -10,7 +10,7 @@ a mock.
 Blockchain queries (read-only). Queries a Cardano node via N2C
 LocalStateQuery.
 
-**Implementation:** `mkNodeClientProvider` (real N2C)
+**Implementation:** [`mkNodeClientProvider`](https://github.com/paolino/cardano-mpfs-offchain/search?q=mkNodeClientProvider&type=code) (real N2C, in [`Provider.NodeClient`](https://github.com/paolino/cardano-mpfs-offchain/search?q=%22module+Cardano.MPFS.Provider.NodeClient%22&type=code))
 
 ```haskell
 data Provider m = Provider
@@ -44,7 +44,8 @@ graph LR
 Manages a map of token identifiers to MPF tries. Each token has
 its own isolated trie.
 
-**Implementation:** `mkPureTrieManager` (in-memory `IORef` maps)
+**Implementation:** [`mkPureTrieManager`](https://github.com/paolino/cardano-mpfs-offchain/search?q=mkPureTrieManager&type=code) (in-memory, in [`Trie.PureManager`](https://github.com/paolino/cardano-mpfs-offchain/search?q=%22module+Cardano.MPFS.Trie.PureManager%22&type=code))
+**Persistent:** [`mkPersistentTrieManager`](https://github.com/paolino/cardano-mpfs-offchain/search?q=mkPersistentTrieManager&type=code) (RocksDB, in [`Trie.Persistent`](https://github.com/paolino/cardano-mpfs-offchain/search?q=%22module+Cardano.MPFS.Trie.Persistent%22&type=code))
 
 ```haskell
 data TrieManager m = TrieManager
@@ -77,7 +78,8 @@ data Trie m = Trie
 Token and request state tracking. Three sub-records for tokens,
 requests, and chain sync checkpoints.
 
-**Implementation:** `mkMockState` (in-memory `IORef` maps)
+**Implementation:** [`mkMockState`](https://github.com/paolino/cardano-mpfs-offchain/search?q=mkMockState&type=code) (in-memory, in [`Mock.State`](https://github.com/paolino/cardano-mpfs-offchain/search?q=%22module+Cardano.MPFS.Mock.State%22&type=code))
+**Persistent:** [`Indexer.Persistent`](https://github.com/paolino/cardano-mpfs-offchain/search?q=%22module+Cardano.MPFS.Indexer.Persistent%22&type=code) (RocksDB)
 
 ```haskell
 data State m = State
@@ -113,7 +115,8 @@ data Checkpoints m = Checkpoints
 Chain sync follower with lifecycle control. Currently a skeleton
 that returns a genesis tip.
 
-**Implementation:** `mkSkeletonIndexer` (no-op, returns `SlotNo 0`)
+**Mock:** [`mkSkeletonIndexer`](https://github.com/paolino/cardano-mpfs-offchain/search?q=mkSkeletonIndexer&type=code) (no-op, in [`Mock.Skeleton`](https://github.com/paolino/cardano-mpfs-offchain/search?q=%22module+Cardano.MPFS.Mock.Skeleton%22&type=code))
+**Real:** [`Indexer.Follower`](https://github.com/paolino/cardano-mpfs-offchain/search?q=%22module+Cardano.MPFS.Indexer.Follower%22&type=code) (block processing with [`detectCageEvents`](https://github.com/paolino/cardano-mpfs-offchain/search?q=detectCageEvents&type=code))
 
 ```haskell
 data ChainTip = ChainTip
@@ -137,7 +140,7 @@ data Indexer m = Indexer
 Transaction submission via N2C LocalTxSubmission. Takes a full
 ledger `Tx ConwayEra` and returns a `SubmitResult`.
 
-**Implementation:** `mkN2CSubmitter` (real N2C)
+**Implementation:** [`mkN2CSubmitter`](https://github.com/paolino/cardano-mpfs-offchain/search?q=mkN2CSubmitter&type=code) (real N2C, in [`Submitter.N2C`](https://github.com/paolino/cardano-mpfs-offchain/search?q=%22module+Cardano.MPFS.Submitter.N2C%22&type=code))
 
 ```haskell
 data SubmitResult
@@ -156,7 +159,8 @@ newtype Submitter m = Submitter
 Constructs transactions for all MPFS protocol operations. Returns
 full ledger `Tx` values ready for signing.
 
-**Implementation:** `mkMockTxBuilder` (placeholder)
+**Mock:** [`mkMockTxBuilder`](https://github.com/paolino/cardano-mpfs-offchain/search?q=mkMockTxBuilder&type=code) (in [`Mock.TxBuilder`](https://github.com/paolino/cardano-mpfs-offchain/search?q=%22module+Cardano.MPFS.Mock.TxBuilder%22&type=code))
+**Real:** [`mkRealTxBuilder`](https://github.com/paolino/cardano-mpfs-offchain/search?q=mkRealTxBuilder&type=code) (in [`TxBuilder.Real`](https://github.com/paolino/cardano-mpfs-offchain/search?q=%22module+Cardano.MPFS.TxBuilder.Real%22+path%3AReal.hs&type=code))
 
 ```haskell
 data TxBuilder m = TxBuilder
@@ -187,9 +191,10 @@ data TxBuilder m = TxBuilder
 
 ## Balance
 
-Pure transaction balancing function (not a singleton record).
+Pure transaction balancing function (not a singleton record), in
+[`Core.Balance`](https://github.com/paolino/cardano-mpfs-offchain/search?q=%22module+Cardano.MPFS.Core.Balance%22&type=code).
 Adds a fee-paying UTxO and change output, finding the fee via
-a fixpoint loop over `estimateMinFeeTx`.
+a fixpoint loop over [`estimateMinFeeTx`](https://github.com/paolino/cardano-mpfs-offchain/search?q=estimateMinFeeTx&type=code).
 
 ```haskell
 balanceTx

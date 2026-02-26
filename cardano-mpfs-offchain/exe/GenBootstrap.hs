@@ -34,7 +34,7 @@ import Cardano.Ledger.Shelley.Genesis
     )
 import Cardano.Ledger.Val (inject)
 
-import Cardano.MPFS.Bootstrap
+import Cardano.MPFS.Core.Bootstrap
     ( BootstrapHeader (..)
     , encodeBootstrapFile
     )

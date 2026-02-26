@@ -23,17 +23,17 @@ import Data.Map.Strict qualified as Map
 import Cardano.Ledger.Slot (SlotNo)
 import Cardano.Ledger.TxIn (TxIn)
 
+import Cardano.MPFS.Core.Types
+    ( BlockId
+    , Request (..)
+    , TokenId
+    , TokenState
+    )
 import Cardano.MPFS.State
     ( Checkpoints (..)
     , Requests (..)
     , State (..)
     , Tokens (..)
-    )
-import Cardano.MPFS.Types
-    ( BlockId
-    , Request (..)
-    , TokenId
-    , TokenState
     )
 
 -- | Create a mock 'Tokens IO' backed by an 'IORef'.

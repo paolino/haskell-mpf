@@ -34,8 +34,7 @@ import Database.KV.Transaction
     , KV
     )
 
-import Cardano.MPFS.Indexer.CageEvent (CageInverseOp)
-import Cardano.MPFS.Types
+import Cardano.MPFS.Core.Types
     ( BlockId
     , Request
     , SlotNo
@@ -43,6 +42,7 @@ import Cardano.MPFS.Types
     , TokenState
     , TxIn
     )
+import Cardano.MPFS.Indexer.Event (CageInverseOp)
 
 -- | Chain sync checkpoint stored in the cage-cfg
 -- column family.

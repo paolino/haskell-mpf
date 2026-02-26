@@ -2,7 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 
 -- |
--- Module      : Cardano.MPFS.Indexer.CageEvent
+-- Module      : Cardano.MPFS.Indexer.Event
 -- Description : Cage event detection from transactions
 -- License     : Apache-2.0
 --
@@ -10,7 +10,7 @@
 -- retract, burn) from Cardano transactions by inspecting
 -- mints, outputs, and redeemers at the cage script
 -- address and policy ID.
-module Cardano.MPFS.Indexer.CageEvent
+module Cardano.MPFS.Indexer.Event
     ( -- * Event type
       CageEvent (..)
 
@@ -86,7 +86,7 @@ import Cardano.Ledger.Keys
     ( KeyHash (..)
     , KeyRole (..)
     )
-import Cardano.MPFS.OnChain
+import Cardano.MPFS.Core.OnChain
     ( CageDatum (..)
     , OnChainOperation (..)
     , OnChainRequest (..)
@@ -95,7 +95,7 @@ import Cardano.MPFS.OnChain
     , OnChainTokenState (..)
     , UpdateRedeemer (..)
     )
-import Cardano.MPFS.Types
+import Cardano.MPFS.Core.Types
     ( AssetName (..)
     , Coin (..)
     , ConwayEra

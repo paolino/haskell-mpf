@@ -3,13 +3,13 @@
 
 module Cardano.MPFS.OnChainSpec (spec) where
 
-import Cardano.MPFS.Blueprint
+import Cardano.MPFS.Core.Blueprint
     ( Blueprint (..)
     , extractScriptHash
     , loadBlueprint
     , validateData
     )
-import Cardano.MPFS.OnChain
+import Cardano.MPFS.Core.OnChain
     ( CageDatum (..)
     , Migration (..)
     , Mint (..)

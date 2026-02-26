@@ -11,7 +11,7 @@ import Data.ByteString (ByteString)
 
 import Cardano.Ledger.Api.Tx (Tx)
 
-import Cardano.MPFS.Types
+import Cardano.MPFS.Core.Types
     ( Addr
     , ConwayEra
     , TokenId

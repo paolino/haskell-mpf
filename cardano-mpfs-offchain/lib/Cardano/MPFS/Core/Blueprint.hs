@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
--- Module      : Cardano.MPFS.Blueprint
+-- Module      : Cardano.MPFS.Core.Blueprint
 -- Description : CIP-57 blueprint schema validation
 -- License     : Apache-2.0
 --
@@ -10,7 +10,7 @@
 -- extracts type schemas and script hashes, and
 -- validates 'PlutusCore.Data.Data' values against
 -- the declared schemas.
-module Cardano.MPFS.Blueprint
+module Cardano.MPFS.Core.Blueprint
     ( -- * Schema types
       Blueprint (..)
     , Validator (..)

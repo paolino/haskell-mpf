@@ -2,7 +2,7 @@
 
 module Cardano.MPFS.ProofSpec (spec) where
 
-import Cardano.MPFS.Proof (serializeProof)
+import Cardano.MPFS.Core.Proof (serializeProof)
 import Control.Monad (forM, forM_)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
@@ -55,7 +55,7 @@ import Test.QuickCheck
 
 spec :: Spec
 spec = do
-    describe "Cardano.MPFS.Proof" $ do
+    describe "Cardano.MPFS.Core.Proof" $ do
         -- ------------------------------------------------
         -- merkleRoot reference vectors from helpers.test.js
         -- ------------------------------------------------

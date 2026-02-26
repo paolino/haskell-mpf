@@ -69,6 +69,16 @@ import Cardano.MPFS.Application
     ( cageColumnFamilies
     , dbConfig
     )
+import Cardano.MPFS.Core.Types
+    ( AssetName (..)
+    , BlockId (..)
+    , Coin (..)
+    , Operation (..)
+    , Request (..)
+    , Root (..)
+    , TokenId (..)
+    , TokenState (..)
+    )
 import Cardano.MPFS.Generators
     ( genBlockId
     , genRequest
@@ -86,16 +96,6 @@ import Cardano.MPFS.State
     , Requests (..)
     , State (..)
     , Tokens (..)
-    )
-import Cardano.MPFS.Types
-    ( AssetName (..)
-    , BlockId (..)
-    , Coin (..)
-    , Operation (..)
-    , Request (..)
-    , Root (..)
-    , TokenId (..)
-    , TokenState (..)
     )
 
 -- ---------------------------------------------------------

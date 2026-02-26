@@ -1,5 +1,5 @@
 -- |
--- Module      : Cardano.MPFS.Proof
+-- Module      : Cardano.MPFS.Core.Proof
 -- Description : Aiken-compatible proof serialization
 -- License     : Apache-2.0
 --
@@ -9,7 +9,7 @@
 -- The encoding uses indefinite-length CBOR lists and
 -- bytestrings to match the reference TypeScript
 -- implementation byte-for-byte.
-module Cardano.MPFS.Proof
+module Cardano.MPFS.Core.Proof
     ( -- * Serialization
       serializeProof
 
@@ -41,7 +41,7 @@ import MPF.Proof.Insertion
     , MPFProofStep (..)
     )
 
-import Cardano.MPFS.OnChain
+import Cardano.MPFS.Core.OnChain
     ( Neighbor (..)
     , ProofStep (..)
     )

@@ -40,12 +40,21 @@ import Cardano.MPFS.Application
     ( AppConfig (..)
     , withApplication
     )
-import Cardano.MPFS.Blueprint
+import Cardano.MPFS.Context (Context (..))
+import Cardano.MPFS.Core.Blueprint
     ( applyVersion
     , extractCompiledCode
     , loadBlueprint
     )
-import Cardano.MPFS.Context (Context (..))
+import Cardano.MPFS.Core.Types
+    ( Addr
+    , Coin (..)
+    , ConwayEra
+    , Operation (..)
+    , Request (..)
+    , Root (..)
+    , TokenState (..)
+    )
 import Cardano.MPFS.E2E.Devnet (withCardanoNode)
 import Cardano.MPFS.E2E.Setup
     ( addKeyWitness
@@ -55,11 +64,11 @@ import Cardano.MPFS.E2E.Setup
     , genesisSignKey
     , keyHashFromSignKey
     )
-import Cardano.MPFS.Indexer.CageEvent
+import Cardano.MPFS.Indexer.Event
     ( CageEvent (..)
     , inversesOf
     )
-import Cardano.MPFS.Indexer.CageFollower
+import Cardano.MPFS.Indexer.Follower
     ( applyCageEvent
     , applyCageInverses
     , computeInverse
@@ -86,15 +95,6 @@ import Cardano.MPFS.TxBuilder.Config
 import Cardano.MPFS.TxBuilder.Real.Internal
     ( cageAddrFromCfg
     , computeScriptHash
-    )
-import Cardano.MPFS.Types
-    ( Addr
-    , Coin (..)
-    , ConwayEra
-    , Operation (..)
-    , Request (..)
-    , Root (..)
-    , TokenState (..)
     )
 
 -- | E2E indexer test spec.

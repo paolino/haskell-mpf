@@ -32,9 +32,15 @@ import Cardano.Ledger.Api.Tx.Out
     )
 import Cardano.Ledger.BaseTypes (Inject (..))
 
-import Cardano.MPFS.Balance (balanceTx)
-import Cardano.MPFS.OnChain
+import Cardano.MPFS.Core.Balance (balanceTx)
+import Cardano.MPFS.Core.OnChain
     ( OnChainOperation (..)
+    )
+import Cardano.MPFS.Core.Types
+    ( Coin (..)
+    , ConwayEra
+    , TokenId
+    , TokenState (..)
     )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.State (State (..), Tokens (..))
@@ -42,12 +48,6 @@ import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
-import Cardano.MPFS.Types
-    ( Coin (..)
-    , ConwayEra
-    , TokenId
-    , TokenState (..)
-    )
 
 -- | Build a request-insert transaction.
 --

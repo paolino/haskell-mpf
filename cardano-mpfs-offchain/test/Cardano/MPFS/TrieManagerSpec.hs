@@ -22,14 +22,14 @@ import Test.Hspec
 import Control.Exception (SomeException, try)
 import Control.Monad (void)
 
-import Cardano.MPFS.Trie
-    ( Trie (..)
-    , TrieManager (..)
-    )
-import Cardano.MPFS.Types
+import Cardano.MPFS.Core.Types
     ( AssetName (..)
     , Root (..)
     , TokenId (..)
+    )
+import Cardano.MPFS.Trie
+    ( Trie (..)
+    , TrieManager (..)
     )
 
 -- -----------------------------------------------------------------
