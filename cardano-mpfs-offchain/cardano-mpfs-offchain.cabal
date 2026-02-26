@@ -47,6 +47,7 @@ library
     , cardano-ledger-core
     , cardano-ledger-mary
     , cardano-strict-containers
+    , cardano-utxo-csmt:library
     , cborg
     , containers                               >=0.6  && <0.8
     , contra-tracer
@@ -84,6 +85,7 @@ library
     Cardano.MPFS.Core.Proof
     Cardano.MPFS.Core.Types
     Cardano.MPFS.Indexer
+    Cardano.MPFS.Indexer.CageFollower
     Cardano.MPFS.Indexer.Codecs
     Cardano.MPFS.Indexer.Columns
     Cardano.MPFS.Indexer.Event
