@@ -68,10 +68,6 @@ import Data.Set qualified as Set
 import Data.Word (Word32)
 import Lens.Micro ((^.))
 
-import Data.Maybe.Strict
-    ( StrictMaybe (SJust)
-    )
-
 import Cardano.Crypto.Hash (hashFromBytes, hashToBytes)
 import Cardano.Ledger.Address (Addr (..))
 import Cardano.Ledger.Alonzo.PParams
@@ -104,6 +100,7 @@ import Cardano.Ledger.Api.Tx.Out
 import Cardano.Ledger.BaseTypes
     ( Network
     , SlotNo (..)
+    , StrictMaybe
     , TxIx (..)
     )
 import Cardano.Ledger.Core

@@ -16,7 +16,12 @@ category:      Cardano
 build-type:    Simple
 
 common warnings
-  ghc-options:        -Wall
+  ghc-options:
+    -Wall -Werror -Wunused-imports -Wunused-packages
+    -Wmissing-export-lists -Wname-shadowing
+    -Wdeferred-out-of-scope-variables -Wpartial-type-signatures
+    -Wredundant-constraints
+
   default-extensions:
     DerivingStrategies
     DuplicateRecordFields
@@ -42,7 +47,6 @@ library
     , cardano-ledger-core
     , cardano-ledger-mary
     , cardano-strict-containers
-    , cardano-utxo-csmt:library
     , cborg
     , containers                               >=0.6  && <0.8
     , contra-tracer
@@ -66,11 +70,9 @@ library
     , rocksdb-haskell-jprupp
     , rocksdb-kv-transactions
     , rocksdb-kv-transactions:kv-transactions
-    , serialise
     , stm
     , text                                     >=2.0  && <2.2
     , time
-    , typed-protocols
 
   exposed-modules:
     Cardano.MPFS.Application
@@ -213,7 +215,6 @@ test-suite e2e-tests
     , ouroboros-network-api
     , process
     , temporary
-    , text
     , time
     , unix
 

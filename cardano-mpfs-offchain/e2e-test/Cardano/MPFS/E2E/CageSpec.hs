@@ -44,7 +44,6 @@ import Cardano.Ledger.Api.Tx
 import Cardano.Ledger.Api.Tx.Body
     ( inputsTxBodyL
     , mintTxBodyL
-    , outputsTxBodyL
     , referenceInputsTxBodyL
     )
 import Cardano.Ledger.Api.Tx.Out (TxOut)
@@ -159,7 +158,7 @@ cageFlowSpec
 cageFlowSpec bpPath scriptBytes =
     it "boot, request, update, retract"
         $ withE2E scriptBytes
-        $ \sock cfg ctx -> do
+        $ \_sock cfg ctx -> do
             let scriptAddr =
                     cageAddrFromCfg cfg Testnet
 
@@ -425,12 +424,14 @@ extractTokenId
 extractTokenId cfg tx =
     let MultiAsset ma =
             tx ^. bodyTxL . mintTxBodyL
-        [(an, _)] =
+        assets =
             Map.toList
                 ( ma
                     Map.! cagePolicyIdFromCfg cfg
                 )
-    in  TokenId an
+    in  case assets of
+            [(an, _)] -> TokenId an
+            _ -> error "extractTokenId: unexpected assets"
 
 -- | Wait for a transaction to be confirmed
 -- (~50 devnet blocks at 0.1s slots).

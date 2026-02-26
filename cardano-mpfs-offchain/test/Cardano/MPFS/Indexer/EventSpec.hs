@@ -17,7 +17,6 @@ import Test.QuickCheck
     ( Gen
     , forAll
     , listOf1
-    , property
     )
 
 import Cardano.MPFS.Core.Types

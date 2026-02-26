@@ -25,8 +25,7 @@ import Test.QuickCheck
     )
 
 import Cardano.MPFS.Core.Types
-    ( Root (..)
-    , TokenState (..)
+    ( TokenState (..)
     )
 import Cardano.MPFS.Generators
     ( genRequest
@@ -50,7 +49,7 @@ import Cardano.MPFS.State
     , State (..)
     , Tokens (..)
     )
-import Cardano.MPFS.Trie (TrieManager (..))
+import Cardano.MPFS.Trie ()
 import Cardano.MPFS.Trie.PureManager
     ( mkPureTrieManager
     )

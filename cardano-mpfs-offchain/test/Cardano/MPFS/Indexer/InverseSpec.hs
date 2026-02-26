@@ -19,9 +19,7 @@ import Test.QuickCheck (forAll)
 import Test.QuickCheck.Monadic (assert, monadicIO, run)
 
 import Cardano.MPFS.Core.Types
-    ( Request (..)
-    , Root (..)
-    , TokenState (..)
+    ( TokenState (..)
     )
 import Cardano.MPFS.Generators
     ( genRequest
@@ -39,8 +37,7 @@ import Cardano.MPFS.Mock.State
     ( mkMockState
     )
 import Cardano.MPFS.State
-    ( Checkpoints (..)
-    , Requests (..)
+    ( Requests (..)
     , State (..)
     , Tokens (..)
     )
@@ -87,6 +84,8 @@ applyInverseOp State{..} = \case
                     tid
                     ts{root = newRoot}
             Nothing -> pure ()
+    InvTrieInsert{} -> pure ()
+    InvTrieDelete{} -> pure ()
 
 spec :: Spec
 spec = describe "Inverse operations" $ do

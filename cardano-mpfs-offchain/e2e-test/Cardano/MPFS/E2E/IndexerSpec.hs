@@ -171,10 +171,11 @@ indexerSpecs scriptBytes = do
             case events of
                 [CageBoot tid ts] -> do
                     -- Apply event
-                    applyCageEvent
-                        (state ctx)
-                        (trieManager ctx)
-                        (CageBoot tid ts)
+                    _ <-
+                        applyCageEvent
+                            (state ctx)
+                            (trieManager ctx)
+                            (CageBoot tid ts)
                     -- Verify state
                     mTs <-
                         getToken
@@ -214,7 +215,9 @@ indexerSpecs scriptBytes = do
             -- Get tokenId from state
             tids <-
                 listTokens (tokens (state ctx))
-            let tid = head tids
+            tid <- case tids of
+                (t : _) -> pure t
+                [] -> error "no tokens"
 
             -- Submit request tx
             signedReq <-
@@ -237,10 +240,11 @@ indexerSpecs scriptBytes = do
             length events `shouldBe` 1
             case events of
                 [CageRequest txIn req] -> do
-                    applyCageEvent
-                        (state ctx)
-                        (trieManager ctx)
-                        (CageRequest txIn req)
+                    _ <-
+                        applyCageEvent
+                            (state ctx)
+                            (trieManager ctx)
+                            (CageRequest txIn req)
                     -- Verify request in state
                     mReq <-
                         getRequest
@@ -270,7 +274,9 @@ indexerSpecs scriptBytes = do
 
             tids <-
                 listTokens (tokens (state ctx))
-            let tid = head tids
+            tid <- case tids of
+                (t : _) -> pure t
+                [] -> error "no tokens"
 
             -- Submit request
             signedReq <-
@@ -355,10 +361,11 @@ indexerSpecs scriptBytes = do
                         length consumed
                             `shouldSatisfy` (>= 1)
                         -- Apply event
-                        applyCageEvent
-                            (state ctx)
-                            (trieManager ctx)
-                            evt
+                        _ <-
+                            applyCageEvent
+                                (state ctx)
+                                (trieManager ctx)
+                                evt
                         -- Verify root updated
                         mTs <-
                             getToken
@@ -414,7 +421,9 @@ indexerSpecs scriptBytes = do
 
             tids <-
                 listTokens (tokens (state ctx))
-            let tid = head tids
+            tid <- case tids of
+                (t : _) -> pure t
+                [] -> error "no tokens"
 
             -- Submit request
             signedReq <-
@@ -486,10 +495,11 @@ indexerSpecs scriptBytes = do
             case retracts of
                 [evt@(CageRetract rIn)] -> do
                     rIn `shouldBe` reqTxIn
-                    applyCageEvent
-                        (state ctx)
-                        (trieManager ctx)
-                        evt
+                    _ <-
+                        applyCageEvent
+                            (state ctx)
+                            (trieManager ctx)
+                            evt
                     -- Request removed
                     mReq <-
                         getRequest
@@ -514,7 +524,9 @@ indexerSpecs scriptBytes = do
 
             tids <-
                 listTokens (tokens (state ctx))
-            let tid = head tids
+            tid <- case tids of
+                (t : _) -> pure t
+                [] -> error "no tokens"
 
             -- Snapshot before burn
             preUtxos <-
@@ -547,10 +559,11 @@ indexerSpecs scriptBytes = do
             case events of
                 [CageBurn burnTid] -> do
                     burnTid `shouldBe` tid
-                    applyCageEvent
-                        (state ctx)
-                        (trieManager ctx)
-                        (CageBurn burnTid)
+                    _ <-
+                        applyCageEvent
+                            (state ctx)
+                            (trieManager ctx)
+                            (CageBurn burnTid)
                     -- Token removed from state
                     mTs <-
                         getToken
@@ -575,7 +588,9 @@ indexerSpecs scriptBytes = do
 
             tids <-
                 listTokens (tokens (state ctx))
-            let tid = head tids
+            tid <- case tids of
+                (t : _) -> pure t
+                [] -> error "no tokens"
 
             -- Save token state before burn
             Just tsBefore <-
@@ -686,10 +701,11 @@ indexerSpecs scriptBytes = do
                     -- Inverse should remove the token
                     inverses `shouldSatisfy` (not . null)
                     -- Apply event
-                    applyCageEvent
-                        (state ctx)
-                        (trieManager ctx)
-                        evt
+                    _ <-
+                        applyCageEvent
+                            (state ctx)
+                            (trieManager ctx)
+                            evt
                     -- Verify token exists
                     mTs1 <-
                         getToken
@@ -727,7 +743,9 @@ indexerSpecs scriptBytes = do
 
             tids <-
                 listTokens (tokens (state ctx))
-            let tid = head tids
+            tid <- case tids of
+                (t : _) -> pure t
+                [] -> error "no tokens"
 
             -- Submit request 1
             signedReq1 <-
@@ -861,6 +879,9 @@ indexerSpecs scriptBytes = do
             -- Verify token exists
             tids <-
                 listTokens (tokens (state ctx))
+            tid <- case tids of
+                (t : _) -> pure t
+                [] -> error "no tokens"
             length tids `shouldBe` 1
 
             -- Note: true RocksDB reopen test requires
@@ -871,7 +892,7 @@ indexerSpecs scriptBytes = do
             mTs <-
                 getToken
                     (tokens (state ctx))
-                    (head tids)
+                    tid
             mTs `shouldSatisfy` \case
                 Just _ -> True
                 Nothing -> False

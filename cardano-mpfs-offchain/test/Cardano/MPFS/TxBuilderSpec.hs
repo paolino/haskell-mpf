@@ -17,6 +17,7 @@ import System.Environment (lookupEnv)
 import Test.Hspec
     ( Spec
     , describe
+    , expectationFailure
     , it
     , runIO
     , shouldBe
@@ -348,10 +349,12 @@ requestInsertSpec =
 
         it "cage output has maxFee + 2 ADA" $ do
             tx <- runRequestInsert
-            let cageOut = head (toOutList tx)
-                outCoin = cageOut ^. coinTxOutL
-            -- maxFee=1M + minAda=2M = 3M
-            outCoin `shouldBe` Coin 3_000_000
+            case toOutList tx of
+                (cageOut : _) -> do
+                    let outCoin = cageOut ^. coinTxOutL
+                    -- maxFee=1M + minAda=2M = 3M
+                    outCoin `shouldBe` Coin 3_000_000
+                [] -> expectationFailure "no outputs"
 
         it "has no mint field" $ do
             tx <- runRequestInsert
@@ -384,9 +387,11 @@ requestDeleteSpec =
 
         it "cage output has maxFee + 2 ADA" $ do
             tx <- runRequestDelete
-            let cageOut = head (toOutList tx)
-                outCoin = cageOut ^. coinTxOutL
-            outCoin `shouldBe` Coin 3_000_000
+            case toOutList tx of
+                (cageOut : _) -> do
+                    let outCoin = cageOut ^. coinTxOutL
+                    outCoin `shouldBe` Coin 3_000_000
+                [] -> expectationFailure "no outputs"
 
         it "has no mint field" $ do
             tx <- runRequestDelete
@@ -506,8 +511,9 @@ endTokenSpec =
             mPolicy `shouldSatisfy` isJust
             let assets = fromJust mPolicy
             Map.size assets `shouldBe` 1
-            let qty = head (Map.elems assets)
-            qty `shouldBe` (-1)
+            case Map.elems assets of
+                [qty] -> qty `shouldBe` (-1)
+                _ -> expectationFailure "expected 1 asset"
 
         it "has a script witness" $ do
             tx <- runEndToken
@@ -599,8 +605,9 @@ bootTokenWithScript scriptBytes = do
         -- exactly one asset minted
         Map.size assets `shouldBe` 1
         -- quantity is +1
-        let qty = head (Map.elems assets)
-        qty `shouldBe` 1
+        case Map.elems assets of
+            [qty] -> qty `shouldBe` 1
+            _ -> expectationFailure "expected 1 asset"
 
     it "has a script witness" $ do
         tx <- runBootToken cfg
@@ -616,9 +623,11 @@ bootTokenWithScript scriptBytes = do
 
     it "cage output has 2 ADA" $ do
         tx <- runBootToken cfg
-        let cageOut = head (toOutList tx)
-            outCoin = cageOut ^. coinTxOutL
-        outCoin `shouldBe` Coin 2_000_000
+        case toOutList tx of
+            (cageOut : _) -> do
+                let outCoin = cageOut ^. coinTxOutL
+                outCoin `shouldBe` Coin 2_000_000
+            [] -> expectationFailure "no outputs"
 
 -- ---------------------------------------------------------
 -- Runners

@@ -11,14 +11,11 @@
 
 let
   haddock =
-    pkgs.buildPackages.haskell-nix.compiler.ghc984.passthru.haddock
-      or pkgs.haskellPackages.haddock;
+    pkgs.buildPackages.haskell-nix.compiler.ghc984.passthru.haddock or pkgs.haskellPackages.haddock;
 
-  mpfDoc =
-    project.hsPkgs.merkle-patricia-forestry.components.library.doc;
+  mpfDoc = project.hsPkgs.merkle-patricia-forestry.components.library.doc;
 
-  offchainDoc =
-    project.hsPkgs.cardano-mpfs-offchain.components.library.doc;
+  offchainDoc = project.hsPkgs.cardano-mpfs-offchain.components.library.doc;
 
   mpfName = "merkle-patricia-forestry";
   offchainName = "cardano-mpfs-offchain";
