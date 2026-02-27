@@ -38,7 +38,12 @@ module Cardano.MPFS.Application
     , cageColumnFamilies
     ) where
 
-import Control.Concurrent.Async (async, cancel)
+import Control.Concurrent.Async
+    ( async
+    , cancel
+    , link
+    )
+import Control.Exception (throwIO)
 import Control.Monad (when)
 import Control.Tracer (nullTracer)
 
@@ -265,11 +270,16 @@ withApplication cfg action =
                                 cageIntersector
                                 startPts
                     chainThread <-
-                        async
-                            $ runLocalNodeApplication
-                                (networkMagic cfg)
-                                (socketPath cfg)
-                                chainSyncApp
+                        async $ do
+                            er <-
+                                runLocalNodeApplication
+                                    (networkMagic cfg)
+                                    (socketPath cfg)
+                                    chainSyncApp
+                            case er of
+                                Left e -> throwIO e
+                                Right () -> pure ()
+                    link chainThread
 
                     -- Connection 2: LSQ + LTxS
                     idx <- mkSkeletonIndexer

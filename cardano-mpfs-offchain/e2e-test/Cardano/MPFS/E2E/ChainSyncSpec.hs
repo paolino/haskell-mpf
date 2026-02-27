@@ -25,6 +25,7 @@ import Test.Hspec
     , describe
     , expectationFailure
     , it
+    , pendingWith
     , runIO
     , shouldBe
     , shouldSatisfy
@@ -130,12 +131,19 @@ spec = describe "ChainSync E2E" $ do
 -- ---------------------------------------------------------
 
 -- | All ChainSync E2E test cases.
+-- Blocked on cardano-utxo-csmt#101: fresh DB
+-- crashes on first forwardTipApply.
 chainsyncSpecs :: SBS.ShortByteString -> Spec
 chainsyncSpecs scriptBytes = do
+    let blocked =
+            pendingWith
+                "cardano-utxo-csmt#101: fresh \
+                \DB forwardTipApply crash"
+
     -- Test 1: boot auto-indexes token
-    it "boot auto-indexes token"
-        $ withE2E scriptBytes
-        $ \cfg ctx -> do
+    it "boot auto-indexes token" $ do
+        blocked
+        withE2E scriptBytes $ \cfg ctx -> do
             -- Submit boot tx
             signedBoot <-
                 buildAndSubmit ctx
@@ -145,7 +153,7 @@ chainsyncSpecs scriptBytes = do
             let tokenId =
                     extractTokenId cfg signedBoot
 
-            -- Poll until CageFollower indexes the token
+            -- Poll until CageFollower indexes
             mTs <-
                 pollUntilJust 30
                     $ getToken
@@ -165,9 +173,9 @@ chainsyncSpecs scriptBytes = do
                             (BS.replicate 32 0)
 
     -- Test 2: request auto-indexes
-    it "request auto-indexes"
-        $ withE2E scriptBytes
-        $ \cfg ctx -> do
+    it "request auto-indexes" $ do
+        blocked
+        withE2E scriptBytes $ \cfg ctx -> do
             -- Submit boot tx
             signedBoot <-
                 buildAndSubmit ctx
@@ -205,7 +213,9 @@ chainsyncSpecs scriptBytes = do
                         pollUntilJust 30 $ do
                             rs <-
                                 requestsByToken
-                                    (requests (state ctx))
+                                    ( requests
+                                        (state ctx)
+                                    )
                                     tokenId
                             if null rs
                                 then pure Nothing
@@ -222,15 +232,16 @@ chainsyncSpecs scriptBytes = do
                                     ( \r ->
                                         requestKey r
                                             == "hello"
-                                            && requestValue r
+                                            && requestValue
+                                                r
                                                 == Insert
                                                     "world"
                                     )
 
     -- Test 3: checkpoint tracks processed blocks
-    it "checkpoint tracks processed blocks"
-        $ withE2E scriptBytes
-        $ \cfg ctx -> do
+    it "checkpoint tracks processed blocks" $ do
+        blocked
+        withE2E scriptBytes $ \cfg ctx -> do
             -- Submit boot tx to ensure blocks
             -- are being processed
             signedBoot <-
