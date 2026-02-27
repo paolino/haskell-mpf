@@ -147,7 +147,7 @@ chainsyncSpecs scriptBytes = do
 
             -- Poll until CageFollower indexes the token
             mTs <-
-                pollUntilJust 15
+                pollUntilJust 30
                     $ getToken
                         (tokens (state ctx))
                         tokenId
@@ -179,7 +179,7 @@ chainsyncSpecs scriptBytes = do
 
             -- Poll until boot is auto-indexed
             mBoot <-
-                pollUntilJust 15
+                pollUntilJust 30
                     $ getToken
                         (tokens (state ctx))
                         tokenId
@@ -202,7 +202,7 @@ chainsyncSpecs scriptBytes = do
                     -- Poll until request is
                     -- auto-indexed
                     mReqs <-
-                        pollUntilJust 15 $ do
+                        pollUntilJust 30 $ do
                             rs <-
                                 requestsByToken
                                     (requests (state ctx))
@@ -243,7 +243,7 @@ chainsyncSpecs scriptBytes = do
 
             -- Poll until boot is auto-indexed
             mBoot <-
-                pollUntilJust 15
+                pollUntilJust 30
                     $ getToken
                         (tokens (state ctx))
                         tokenId
@@ -302,6 +302,9 @@ withE2E scriptBytes action = do
                     _ <-
                         queryProtocolParams
                             (provider ctx)
+                    -- Let ChainSync catch up to the
+                    -- tip before submitting txs
+                    threadDelay 10_000_000
                     action cfg ctx
 
 -- ---------------------------------------------------------
