@@ -47,11 +47,12 @@ import Control.Exception (throwIO)
 import Control.Monad (when)
 import Control.Tracer (nullTracer)
 
+import Data.ByteString.Lazy qualified as BSL
+
 import Database.KV.Database (mkColumns)
 import Database.KV.RocksDB (mkRocksDBDatabase)
 import Database.KV.Transaction
-    ( insert
-    , newRunTransaction
+    ( newRunTransaction
     )
 import Database.RocksDB
     ( Config (..)
@@ -64,17 +65,9 @@ import Ouroboros.Network.Point (WithOrigin (..))
 import Cardano.UTxOCSMT.Application.ChainSyncN2C
     ( mkN2CChainSyncApplication
     )
-import Cardano.UTxOCSMT.Application.Database.Implementation.Armageddon
-    ( ArmageddonParams (..)
-    )
-import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
-    ( Columns (RollbackPoints)
-    )
-import Cardano.UTxOCSMT.Application.Database.Implementation.RollbackPoint
-    ( RollbackPoint (..)
-    )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( RunCSMTTransaction (..)
+    , insertCSMT
     )
 import Cardano.UTxOCSMT.Application.Database.Interface
     ( State (..)
@@ -229,11 +222,6 @@ withApplication cfg action =
                             db
                             nodesCF
                             kvCF
-                    -- Bootstrap seeding on fresh DB
-                    seedBootstrap
-                        (bootstrapFile cfg)
-                        st
-
                     -- UTxO state machine (columns 1–4)
                     ( (utxoUpdate, availPts)
                         , runner
@@ -247,23 +235,11 @@ withApplication cfg action =
                             (\_ _ -> pure ())
                             armageddonParams
 
-                    -- Seed Origin rollback point on
-                    -- fresh DB so forwardTipApply
-                    -- doesn't crash on empty
-                    -- RollbackPoints
-                    -- (cardano-utxo-csmt#101)
-                    when (null availPts) $ do
-                        let ArmageddonParams
-                                {noHash} =
-                                    armageddonParams
-                        txRunTransaction runner
-                            $ insert
-                                RollbackPoints
-                                Origin
-                            $ RollbackPoint
-                                noHash
-                                []
-                                Nothing
+                    -- Bootstrap seeding on fresh DB
+                    seedBootstrap
+                        (bootstrapFile cfg)
+                        st
+                        runner
 
                     let startPts :: [Point]
                         startPts =
@@ -358,14 +334,18 @@ withApplication cfg action =
                         \column families"
 
 -- | Seed a fresh database from a bootstrap CBOR
--- file. Sets the initial checkpoint so chain sync
--- resumes from the bootstrap point. No-op if the
--- database already has a checkpoint or no bootstrap
--- file is configured.
+-- file. Sets the initial checkpoint and inserts
+-- genesis UTxOs into the CSMT so chain sync can
+-- resume from the bootstrap point. No-op if the
+-- database already has a checkpoint or no
+-- bootstrap file is configured.
 seedBootstrap
-    :: Maybe FilePath -> CageSt.State IO -> IO ()
-seedBootstrap Nothing _ = pure ()
-seedBootstrap (Just fp) st = do
+    :: Maybe FilePath
+    -> CageSt.State IO
+    -> RunCSMTTransaction cf op slot hash BSL.ByteString BSL.ByteString IO
+    -> IO ()
+seedBootstrap Nothing _ _ = pure ()
+seedBootstrap (Just fp) st runner = do
     existing <-
         CageSt.getCheckpoint
             (CageSt.checkpoints st)
@@ -373,20 +353,25 @@ seedBootstrap (Just fp) st = do
         foldBootstrapEntries
             fp
             onHeader
-            (\_k _v -> pure ())
+            onEntry
   where
     isNothing Nothing = True
     isNothing _ = False
     onHeader BootstrapHeader{..} =
         case bootstrapBlockHash of
             Nothing ->
-                error
-                    "Bootstrap file has no block \
-                    \hash — discoverBlockHash not \
-                    \yet implemented"
+                -- Genesis bootstrap: no block hash,
+                -- no checkpoint. ChainSync starts
+                -- from Origin.
+                pure ()
             Just h ->
                 CageSt.putCheckpoint
                     (CageSt.checkpoints st)
                     (SlotNo bootstrapSlot)
                     (BlockId h)
                     []
+    onEntry k v =
+        txRunTransaction runner
+            $ insertCSMT
+                (BSL.fromStrict k)
+                (BSL.fromStrict v)

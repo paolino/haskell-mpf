@@ -19,6 +19,7 @@ import Data.ByteString.Short qualified as SBS
 import Data.Map.Strict qualified as Map
 import Lens.Micro ((^.))
 import System.Environment (lookupEnv)
+import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec
     ( Spec
@@ -47,6 +48,9 @@ import Cardano.MPFS.Core.Blueprint
     ( applyVersion
     , extractCompiledCode
     , loadBlueprint
+    )
+import Cardano.MPFS.Core.Bootstrap.Genesis
+    ( generateBootstrapFile
     )
 import Cardano.MPFS.Core.Types
     ( Coin (..)
@@ -285,6 +289,19 @@ withE2E scriptBytes action = do
     withCardanoNode gDir $ \sock startMs ->
         withSystemTempDirectory "mpfs-chainsync"
             $ \tmpDir -> do
+                -- Generate bootstrap from genesis
+                -- so the CSMT has the initial
+                -- UTxO set before ChainSync starts
+                let bsFile =
+                        tmpDir </> "bootstrap.cbor"
+                    dbDir =
+                        tmpDir </> "db"
+                    genesisJson =
+                        gDir
+                            </> "shelley-genesis.json"
+                generateBootstrapFile
+                    genesisJson
+                    bsFile
                 let cfg =
                         cageCfg scriptBytes startMs
                     appCfg =
@@ -292,18 +309,18 @@ withE2E scriptBytes action = do
                             { networkMagic =
                                 devnetMagic
                             , socketPath = sock
-                            , dbPath = tmpDir
+                            , dbPath = dbDir
                             , channelCapacity = 16
                             , cageConfig = cfg
                             , bootstrapFile =
-                                Nothing
+                                Just bsFile
                             }
                 withApplication appCfg $ \ctx -> do
                     _ <-
                         queryProtocolParams
                             (provider ctx)
-                    -- Let ChainSync catch up to the
-                    -- tip before submitting txs
+                    -- Let ChainSync catch up to
+                    -- the tip before submitting txs
                     threadDelay 10_000_000
                     action cfg ctx
 
