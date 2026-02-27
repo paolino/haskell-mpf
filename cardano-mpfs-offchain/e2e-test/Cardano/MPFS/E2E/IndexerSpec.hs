@@ -941,6 +941,8 @@ withE2E scriptBytes action = do
                             , cageConfig = cfg
                             , bootstrapFile =
                                 Just bsFile
+                            , followerEnabled =
+                                False
                             }
                 withApplication appCfg $ \ctx -> do
                     _ <-
