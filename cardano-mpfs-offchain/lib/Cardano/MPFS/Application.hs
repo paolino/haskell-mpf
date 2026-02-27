@@ -143,6 +143,8 @@ data AppConfig = AppConfig
     -- ^ Cage script and protocol parameters
     , bootstrapFile :: !(Maybe FilePath)
     -- ^ CBOR bootstrap file for fresh DB seeding
+    , followerEnabled :: !Bool
+    -- ^ Start CageFollower ChainSync processing
     }
 
 -- | Default RocksDB configuration.
@@ -250,43 +252,48 @@ withApplication cfg action =
                                     ]
                                 else availPts
 
-                    -- CageFollower intersector
-                    let cageIntersector =
-                            mkCageIntersector
-                                ( cfgScriptHash
-                                    $ cageConfig cfg
-                                )
-                                st
-                                tm
-                                rt
-                                -- Placeholder resolver;
-                                -- real resolver needs
-                                -- CBOR encode/decode
-                                (\_ -> pure Nothing)
-                                (Syncing utxoUpdate)
-
                     -- Connection 1: ChainSync
-                    let chainSyncApp =
-                            mkN2CChainSyncApplication
-                                nullTracer
-                                nullTracer
-                                nullTracer
-                                (\_ -> pure ())
-                                (pure ())
-                                Nothing
-                                cageIntersector
-                                startPts
-                    chainThread <-
-                        async $ do
-                            er <-
-                                runLocalNodeApplication
-                                    (networkMagic cfg)
-                                    (socketPath cfg)
-                                    chainSyncApp
-                            case er of
-                                Left e -> throwIO e
-                                Right () -> pure ()
-                    link chainThread
+                    -- (optional, controlled by
+                    -- followerEnabled)
+                    mChainThread <-
+                        if followerEnabled cfg
+                            then do
+                                let cageIntersector =
+                                        mkCageIntersector
+                                            ( cfgScriptHash
+                                                $ cageConfig
+                                                    cfg
+                                            )
+                                            st
+                                            tm
+                                            rt
+                                            (\_ -> pure Nothing)
+                                            (Syncing utxoUpdate)
+                                    chainSyncApp =
+                                        mkN2CChainSyncApplication
+                                            nullTracer
+                                            nullTracer
+                                            nullTracer
+                                            (\_ -> pure ())
+                                            (pure ())
+                                            Nothing
+                                            cageIntersector
+                                            startPts
+                                t <-
+                                    async $ do
+                                        er <-
+                                            runLocalNodeApplication
+                                                (networkMagic cfg)
+                                                (socketPath cfg)
+                                                chainSyncApp
+                                        case er of
+                                            Left e ->
+                                                throwIO e
+                                            Right () ->
+                                                pure ()
+                                link t
+                                pure (Just t)
+                            else pure Nothing
 
                     -- Connection 2: LSQ + LTxS
                     idx <- mkSkeletonIndexer
@@ -325,7 +332,7 @@ withApplication cfg action =
                                 , indexer = idx
                                 }
                     result <- action ctx
-                    cancel chainThread
+                    mapM_ cancel mChainThread
                     cancel nodeThread
                     pure result
                 _ ->
