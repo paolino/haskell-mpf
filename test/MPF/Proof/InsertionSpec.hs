@@ -2,21 +2,31 @@
 
 module MPF.Proof.InsertionSpec (spec) where
 
-import Control.Monad (forM_)
+import Control.Monad (forM, forM_)
 import Data.ByteString qualified as B
+import Data.List (nubBy)
 import MPF.Hashes (mkMPFHash, mpfHashing, renderMPFHash)
 import MPF.Interface (HexDigit (..), byteStringToHexKey)
 import MPF.Test.Lib
     ( deleteMPFM
     , foldMPFProof
     , fruitsTestData
+    , genKeyBytes
+    , genValue
     , insertByteStringM
     , insertMPFM
     , proofMPFM
     , runMPFPure'
+    , toHexKey
     , verifyMPFM
     )
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
+import Test.QuickCheck
+    ( forAll
+    , vectorOf
+    , (===)
+    , (==>)
+    )
 
 spec :: Spec
 spec = do
@@ -192,3 +202,61 @@ spec = do
                             wrongValue = mkMPFHash "not-apple"
                         verifyMPFM appleKey wrongValue
                 verified `shouldBe` False
+
+        describe "properties" $ do
+            it "every inserted key has a proof (single)"
+                $ forAll ((,) <$> genKeyBytes <*> genValue)
+                $ \(kb, vb) ->
+                    let key = toHexKey kb
+                        val = mkMPFHash vb
+                        (mProof, _) = runMPFPure' $ do
+                            insertMPFM key val
+                            proofMPFM key
+                    in  case mProof of
+                            Nothing -> False
+                            Just _ -> True
+
+            it "every inserted key has a proof"
+                $ forAll (vectorOf 3 ((,) <$> genKeyBytes <*> genValue))
+                $ \rawKvs ->
+                    let kvs =
+                            nubBy
+                                (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2)
+                                rawKvs
+                    in  length kvs >= 2 ==>
+                            let kvHashed =
+                                    [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
+                                (results, _) = runMPFPure' $ do
+                                    forM_ kvHashed $ uncurry insertMPFM
+                                    forM kvHashed $ \(k, _) -> do
+                                        mp <- proofMPFM k
+                                        case mp of
+                                            Just _ -> pure True
+                                            Nothing -> pure False
+                            in  and results
+
+            it "non-inserted keys have no proof"
+                $ forAll
+                    ((,,) <$> genKeyBytes <*> genKeyBytes <*> genValue)
+                $ \(kb1, kb2, vb) ->
+                    toHexKey kb1 /= toHexKey kb2 ==>
+                        let key = toHexKey kb1
+                            ghost = toHexKey kb2
+                            val = mkMPFHash vb
+                            (mProof, _) = runMPFPure' $ do
+                                insertMPFM key val
+                                proofMPFM ghost
+                        in  mProof === Nothing
+
+            it "wrong value rejection"
+                $ forAll
+                    ((,,) <$> genKeyBytes <*> genValue <*> genValue)
+                $ \(kb, vb1, vb2) ->
+                    vb1 /= vb2 ==>
+                        let key = toHexKey kb
+                            val = mkMPFHash vb1
+                            wrong = mkMPFHash vb2
+                            (verified, _) = runMPFPure' $ do
+                                insertMPFM key val
+                                verifyMPFM key wrong
+                        in  not verified

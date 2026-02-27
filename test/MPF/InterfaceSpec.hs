@@ -3,14 +3,32 @@
 module MPF.InterfaceSpec (spec) where
 
 import Data.ByteString (ByteString)
+import Data.ByteString qualified as B
+import Data.Serialize.Extra (evalGetM, evalPutM)
+import Data.Word (Word8)
 import MPF.Interface
     ( HexDigit (..)
+    , HexIndirect (..)
     , byteStringToHexKey
     , compareHexKeys
+    , getHexIndirect
+    , getHexKey
     , hexKeyToByteString
     , mkHexDigit
+    , putHexIndirect
+    , putHexKey
     )
+import MPF.Test.Lib (genHexKey)
 import Test.Hspec
+import Test.QuickCheck
+    ( Gen
+    , choose
+    , elements
+    , forAll
+    , property
+    , vectorOf
+    , (===)
+    )
 
 spec :: Spec
 spec = describe "MPF.Interface" $ do
@@ -61,3 +79,59 @@ spec = describe "MPF.Interface" $ do
                 k2 = [HexDigit 1, HexDigit 2, HexDigit 3]
             compareHexKeys k1 k2
                 `shouldBe` ([HexDigit 1, HexDigit 2], [], [HexDigit 3])
+
+    describe "properties" $ do
+        it "hexKeyToByteString . byteStringToHexKey = id (even-length)"
+            $ forAll genEvenByteString
+            $ \bs ->
+                hexKeyToByteString (byteStringToHexKey bs) === bs
+
+        it "compareHexKeys decomposition: common ++ rest1 = k1"
+            $ forAll ((,) <$> genHexKey <*> genHexKey)
+            $ \(k1, k2) ->
+                let (common, rest1, _rest2) = compareHexKeys k1 k2
+                in  common ++ rest1 === k1
+
+        it "compareHexKeys decomposition: common ++ rest2 = k2"
+            $ forAll ((,) <$> genHexKey <*> genHexKey)
+            $ \(k1, k2) ->
+                let (common, _rest1, rest2) = compareHexKeys k1 k2
+                in  common ++ rest2 === k2
+
+        it "compareHexKeys symmetry: same common prefix" $ property $ \k1 k2 ->
+            let (common1, _, _) = compareHexKeys k1 k2
+                (common2, _, _) = compareHexKeys k2 k1
+            in  common1 === common2
+
+        it "putHexKey/getHexKey serialization roundtrip"
+            $ forAll genHexKey
+            $ \k ->
+                evalGetM getHexKey (evalPutM (putHexKey k)) === Just k
+
+        it "putHexIndirect/getHexIndirect serialization roundtrip"
+            $ forAll genHexIndirectBS
+            $ \hi ->
+                evalGetM getHexIndirect (evalPutM (putHexIndirect hi))
+                    === Just hi
+
+        it "hexKeyPrism law: decode . encode = Just"
+            $ forAll genHexKey
+            $ \k ->
+                evalGetM getHexKey (evalPutM (putHexKey k)) === Just k
+
+        it "mkHexDigit succeeds exactly for [0..15]" $ property $ \(w :: Word8) ->
+            case mkHexDigit w of
+                Just (HexDigit n) -> w < 16 && n == w
+                Nothing -> w >= 16
+
+genEvenByteString :: Gen ByteString
+genEvenByteString = do
+    n <- choose (0, 32)
+    B.pack <$> vectorOf n (choose (0, 255))
+
+genHexIndirectBS :: Gen (HexIndirect ByteString)
+genHexIndirectBS = do
+    key <- genHexKey
+    val <- B.pack . (: []) <$> choose (0 :: Word8, 255)
+    isLeaf <- elements [True, False]
+    pure HexIndirect{hexJump = key, hexValue = val, hexIsLeaf = isLeaf}

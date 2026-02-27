@@ -94,8 +94,9 @@ library mpf-test-lib
     , bytestring
     , lens
     , merkle-patricia-forestry
+    , QuickCheck                               >=2.14 && <2.18
     , rocksdb-kv-transactions:kv-transactions
-    , text                                     >=2.0 && <2.2
+    , text                                     >=2.0  && <2.2
 
   hs-source-dirs:   test-lib
   default-language: Haskell2010

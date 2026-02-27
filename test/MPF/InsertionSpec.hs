@@ -11,13 +11,18 @@ import MPF.Test.Lib
     ( encodeHex
     , expectedFullTrieRoot
     , fruitsTestData
+    , genKeyBytes
+    , genValue
     , getRootHashM
     , insertByteStringM
     , insertMPF
     , insertMPFM
     , runMPFPure'
+    , toHexKey
+    , verifyMPFM
     )
 import Test.Hspec
+import Test.QuickCheck (forAll, (===))
 
 spec :: Spec
 spec = describe "MPF.Insertion" $ do
@@ -161,3 +166,28 @@ spec = describe "MPF.Insertion" $ do
             mroot `shouldSatisfy` \case
                 Just _ -> True
                 Nothing -> False
+
+    describe "properties" $ do
+        it "inserting same key twice = inserting once (root hash)"
+            $ forAll ((,) <$> genKeyBytes <*> genValue)
+            $ \(k, v) ->
+                let key = toHexKey k
+                    val = mkMPFHash v
+                    (root1, _) = runMPFPure' $ do
+                        insertMPFM key val
+                        getRootHashM
+                    (root2, _) = runMPFPure' $ do
+                        insertMPFM key val
+                        insertMPFM key val
+                        getRootHashM
+                in  fmap renderMPFHash root1 === fmap renderMPFHash root2
+
+        it "inserted key can be verified"
+            $ forAll ((,) <$> genKeyBytes <*> genValue)
+            $ \(kb, vb) ->
+                let key = toHexKey kb
+                    val = mkMPFHash vb
+                    (verified, _) = runMPFPure' $ do
+                        insertMPFM key val
+                        verifyMPFM key val
+                in  verified

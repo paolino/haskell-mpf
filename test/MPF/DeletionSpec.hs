@@ -4,17 +4,11 @@
 -- Module      : MPF.DeletionSpec
 -- Description : Tests for MPF deletion operations
 --
--- Unit tests for key deletion from the MPF trie:
---
--- * Deleting a key removes it from the trie
--- * Deleting from empty trie is a no-op
--- * Deleting a non-existent key is a no-op
--- * Root hash changes after deletion
--- * Root hash returns to null after deleting all keys
--- * Deletion and re-insertion restores the original root hash
+-- Unit tests and property tests for key deletion from the MPF trie.
 module MPF.DeletionSpec (spec) where
 
 import Control.Monad (forM_)
+import Data.List (nubBy)
 import MPF.Backend.Pure (emptyMPFInMemoryDB)
 import MPF.Hashes (mkMPFHash, renderMPFHash)
 import MPF.Interface (byteStringToHexKey)
@@ -22,13 +16,23 @@ import MPF.Test.Lib
     ( deleteMPF
     , deleteMPFM
     , fruitsTestData
+    , genKeyBytes
+    , genValue
     , getRootHashM
     , insertByteStringM
     , insertMPFM
     , runMPFPure'
+    , toHexKey
     , verifyMPFM
     )
 import Test.Hspec
+import Test.QuickCheck
+    ( forAll
+    , property
+    , vectorOf
+    , (===)
+    , (==>)
+    )
 
 spec :: Spec
 spec = describe "MPF.Deletion" $ do
@@ -230,3 +234,86 @@ spec = describe "MPF.Deletion" $ do
                     fmap renderMPFHash rootDeleted
                         `shouldBe` fmap renderMPFHash rootWithout
                 _ -> expectationFailure "need >= 1 fruit"
+
+    describe "properties" $ do
+        it "insert-delete-reinsert roundtrip"
+            $ forAll ((,) <$> genKeyBytes <*> genValue)
+            $ \(kb, vb) ->
+                let key = toHexKey kb
+                    val = mkMPFHash vb
+                    (rootSingle, _) = runMPFPure' $ do
+                        insertMPFM key val
+                        getRootHashM
+                    (rootReinsert, _) = runMPFPure' $ do
+                        insertMPFM key val
+                        deleteMPFM key
+                        insertMPFM key val
+                        getRootHashM
+                in  fmap renderMPFHash rootReinsert === fmap renderMPFHash rootSingle
+
+        it "deletion is idempotent"
+            $ forAll ((,) <$> genKeyBytes <*> genValue)
+            $ \(kb, vb) ->
+                let key = toHexKey kb
+                    val = mkMPFHash vb
+                    (root1, _) = runMPFPure' $ do
+                        insertMPFM key val
+                        deleteMPFM key
+                        getRootHashM
+                    (root2, _) = runMPFPure' $ do
+                        insertMPFM key val
+                        deleteMPFM key
+                        deleteMPFM key
+                        getRootHashM
+                in  fmap renderMPFHash root1 === fmap renderMPFHash root2
+
+        it "delete non-existent is no-op"
+            $ forAll
+                ((,,) <$> genKeyBytes <*> genKeyBytes <*> genValue)
+            $ \(kb1, kb2, vb) ->
+                toHexKey kb1 /= toHexKey kb2 ==>
+                    let key = toHexKey kb1
+                        ghost = toHexKey kb2
+                        val = mkMPFHash vb
+                        (rootBefore, _) = runMPFPure' $ do
+                            insertMPFM key val
+                            getRootHashM
+                        (rootAfter, _) = runMPFPure' $ do
+                            insertMPFM key val
+                            deleteMPFM ghost
+                            getRootHashM
+                    in  fmap renderMPFHash rootAfter === fmap renderMPFHash rootBefore
+
+        it "mass deletion empties trie"
+            $ forAll (vectorOf 5 ((,) <$> genKeyBytes <*> genValue))
+            $ \rawKvs ->
+                let kvs =
+                        nubBy
+                            (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2)
+                            rawKvs
+                in  length kvs >= 2 ==>
+                        let kvHashed =
+                                [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
+                            (mRoot, _) = runMPFPure' $ do
+                                forM_ kvHashed $ uncurry insertMPFM
+                                forM_ kvHashed $ deleteMPFM . fst
+                                getRootHashM
+                        in  mRoot === Nothing
+
+        it "deletion preserves unrelated keys"
+            $ forAll (vectorOf 3 ((,) <$> genKeyBytes <*> genValue))
+            $ \rawKvs ->
+                let kvs =
+                        nubBy
+                            (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2)
+                            rawKvs
+                in  length kvs == 3 ==>
+                        let kvHashed =
+                                [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
+                            (keepKey, keepVal) = head kvHashed
+                            deleteKey = fst (kvHashed !! 1)
+                            (verified, _) = runMPFPure' $ do
+                                forM_ kvHashed $ uncurry insertMPFM
+                                deleteMPFM deleteKey
+                                verifyMPFM keepKey keepVal
+                        in  verified === True

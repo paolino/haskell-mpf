@@ -30,6 +30,16 @@ module MPF.Test.Lib
     , MPFProofStep (..)
     , foldMPFProof
 
+      -- * QuickCheck Generators
+    , genHexDigit
+    , genHexKey
+    , genMPFHash
+    , genHexIndirect
+    , genKeyBytes
+    , genValue
+    , toHexKey
+    , genUniqueKVs
+
       -- * Test Vectors
     , fruitsTestData
     , expectedFullTrieRoot
@@ -43,6 +53,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.ByteString.Char8 qualified as BC
 import Data.Char (isDigit)
+import Data.List (nubBy)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word8)
 import Database.KV.Transaction (query, runTransactionUnguarded)
@@ -74,10 +85,12 @@ import MPF.Insertion
     )
 import MPF.Interface
     ( FromHexKV (..)
+    , HexDigit (..)
     , HexIndirect (..)
     , HexKey
     , byteStringToHexKey
     , hexKeyPrism
+    , mkLeafIndirect
     )
 import MPF.Proof.Insertion
     ( MPFProof
@@ -85,6 +98,15 @@ import MPF.Proof.Insertion
     , foldMPFProof
     , mkMPFInclusionProof
     , verifyMPFInclusionProof
+    )
+import Test.QuickCheck
+    ( Arbitrary (..)
+    , Gen
+    , choose
+    , elements
+    , listOf
+    , listOf1
+    , vectorOf
     )
 
 -- | Default codecs for testing with MPFHash
@@ -239,6 +261,59 @@ evalMPFPure' p = fst $ runMPFPure emptyMPFInMemoryDB p
 -- | Run a pure MPF computation from empty database
 runMPFPure' :: MPFPure a -> (a, MPFInMemoryDB)
 runMPFPure' = runMPFPure emptyMPFInMemoryDB
+
+-- * QuickCheck Generators
+
+-- | Generate a random HexDigit (0-15)
+genHexDigit :: Gen HexDigit
+genHexDigit = HexDigit <$> choose (0, 15)
+
+instance Arbitrary HexDigit where
+    arbitrary = genHexDigit
+    shrink (HexDigit n)
+        | n == 0 = []
+        | otherwise = [HexDigit (n `div` 2)]
+
+-- | Generate a random HexKey (list of HexDigits)
+genHexKey :: Gen HexKey
+genHexKey = listOf genHexDigit
+
+instance Arbitrary MPFHash where
+    arbitrary = genMPFHash
+    shrink _ = []
+
+-- | Generate a random MPFHash (32 random bytes)
+genMPFHash :: Gen MPFHash
+genMPFHash = mkMPFHash . B.pack <$> vectorOf 32 (choose (0, 255))
+
+-- | Generate a random HexIndirect with arbitrary leaf/branch flag
+genHexIndirect :: Gen (HexIndirect MPFHash)
+genHexIndirect = do
+    key <- genHexKey
+    val <- genMPFHash
+    isLeaf <- elements [True, False]
+    pure
+        $ if isLeaf
+            then mkLeafIndirect key val
+            else HexIndirect{hexJump = key, hexValue = val, hexIsLeaf = False}
+
+-- | Generate a random ByteString key
+genKeyBytes :: Gen ByteString
+genKeyBytes = B.pack <$> listOf1 (choose (0, 255))
+
+-- | Generate a random ByteString value
+genValue :: Gen ByteString
+genValue = B.pack <$> listOf1 (choose (0, 255))
+
+-- | Convert key bytes to HexKey by hashing first (like insertByteStringM does)
+toHexKey :: ByteString -> HexKey
+toHexKey = byteStringToHexKey . renderMPFHash . mkMPFHash
+
+-- | Generate a list of unique key-value pairs (unique by hashed key)
+genUniqueKVs :: Gen [(ByteString, ByteString)]
+genUniqueKVs = do
+    kvs <- listOf1 ((,) <$> genKeyBytes <*> genValue)
+    pure $ nubBy (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2) kvs
 
 -- | Test vectors from aiken-lang implementation
 -- 30 fruit key-value pairs (must match exactly for compatible root hash)

@@ -15,28 +15,26 @@
 module MPF.PropertySpec (spec) where
 
 import Control.Monad (forM, forM_)
-import Data.ByteString (ByteString)
-import Data.ByteString qualified as B
 import Data.List (nubBy)
 import MPF.Hashes (mkMPFHash, renderMPFHash)
-import MPF.Interface (HexKey, byteStringToHexKey)
 import MPF.Test.Lib
     ( deleteMPFM
+    , genKeyBytes
+    , genUniqueKVs
+    , genValue
     , getRootHashM
     , insertBatchMPFM
     , insertChunkedMPFM
     , insertMPFM
     , runMPFPure'
+    , toHexKey
     , verifyMPFM
     )
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.QuickCheck
     ( Arbitrary (..)
-    , Gen
     , Property
-    , choose
     , forAll
-    , listOf1
     , property
     , shuffle
     , vectorOf
@@ -44,32 +42,15 @@ import Test.QuickCheck
     , (==>)
     )
 
--- | Generate a random ByteString key
-genKeyBytes :: Gen ByteString
-genKeyBytes = B.pack <$> listOf1 (choose (0, 255))
-
--- | Generate a random ByteString value
-genValue :: Gen ByteString
-genValue = B.pack <$> listOf1 (choose (0, 255))
-
--- | Convert key bytes to HexKey by hashing first (like insertByteStringM does)
--- This produces 64 hex digit keys, which is what Aiken/fruits tests use
-toHexKey :: ByteString -> HexKey
-toHexKey = byteStringToHexKey . renderMPFHash . mkMPFHash
-
 -- | A key-value pair for testing
-data TestKV = TestKV ByteString ByteString
+data TestKV = TestKV
+    { testKey :: !String
+    , testVal :: !String
+    }
     deriving (Show, Eq)
 
 instance Arbitrary TestKV where
-    arbitrary = TestKV <$> genKeyBytes <*> genValue
-
--- | Generate a list of unique key-value pairs (unique by hashed key)
-genUniqueKVs :: Gen [(ByteString, ByteString)]
-genUniqueKVs = do
-    kvs <- listOf1 ((,) <$> genKeyBytes <*> genValue)
-    -- Ensure uniqueness after hashing to avoid key collisions
-    pure $ nubBy (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2) kvs
+    arbitrary = TestKV . show <$> genKeyBytes <*> (show <$> genValue)
 
 spec :: Spec
 spec = do
@@ -106,8 +87,8 @@ spec = do
                 $ property propSingleInsertHasRoot
 
 -- | Property: inserted key-value can be verified
-propInsertVerify :: TestKV -> Bool
-propInsertVerify (TestKV keyBs valBs) =
+propInsertVerify :: Property
+propInsertVerify = forAll ((,) <$> genKeyBytes <*> genValue) $ \(keyBs, valBs) ->
     let key = toHexKey keyBs
         value = mkMPFHash valBs
         (verified, _) = runMPFPure' $ do
@@ -122,10 +103,8 @@ propMultipleInsertVerify =
         let kvs = nubBy (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2) rawKvs
         in  length kvs == 3 ==>
                 let kvHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
-                    -- Insert all, then verify one at a time to find which fails
                     (verifyResults, _) = runMPFPure' $ do
                         forM_ kvHashed $ uncurry insertMPFM
-                        -- Return verification result for each key
                         forM kvHashed $ \(k, v) -> do
                             r <- verifyMPFM k v
                             pure (r, k)
@@ -148,8 +127,8 @@ propInsertionOrderIndependence = forAll genUniqueKVs $ \kvs ->
             in  fmap renderMPFHash root1 === fmap renderMPFHash root2
 
 -- | Property: deleted key cannot be verified
-propDeleteRemovesKey :: TestKV -> Bool
-propDeleteRemovesKey (TestKV keyBs valBs) =
+propDeleteRemovesKey :: Property
+propDeleteRemovesKey = forAll ((,) <$> genKeyBytes <*> genValue) $ \(keyBs, valBs) ->
     let key = toHexKey keyBs
         value = mkMPFHash valBs
         (verified, _) = runMPFPure' $ do
@@ -174,8 +153,8 @@ propDeletePreservesSiblings =
                 in  verified
 
 -- | Property: single insert produces a root hash
-propSingleInsertHasRoot :: TestKV -> Bool
-propSingleInsertHasRoot (TestKV keyBs valBs) =
+propSingleInsertHasRoot :: Property
+propSingleInsertHasRoot = forAll ((,) <$> genKeyBytes <*> genValue) $ \(keyBs, valBs) ->
     let key = toHexKey keyBs
         value = mkMPFHash valBs
         (mRoot, _) = runMPFPure' $ do
@@ -192,11 +171,9 @@ propBatchEqualsSequential =
         let kvs = nubBy (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2) rawKvs
         in  length kvs >= 2 ==>
                 let kvHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
-                    -- Sequential inserts
                     (rootSeq, _) = runMPFPure' $ do
                         forM_ kvHashed $ uncurry insertMPFM
                         getRootHashM
-                    -- Batch insert
                     (rootBatch, _) = runMPFPure' $ do
                         insertBatchMPFM kvHashed
                         getRootHashM
@@ -209,11 +186,9 @@ propChunkedEqualsSequential =
         let kvs = nubBy (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2) rawKvs
         in  length kvs >= 2 ==>
                 let kvHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
-                    -- Sequential inserts
                     (rootSeq, _) = runMPFPure' $ do
                         forM_ kvHashed $ uncurry insertMPFM
                         getRootHashM
-                    -- Chunked insert (chunk size 2 to test chunking)
                     (rootChunked, _) = runMPFPure' $ do
                         _ <- insertChunkedMPFM 2 kvHashed
                         getRootHashM

@@ -4,29 +4,35 @@
 -- Module      : MPF.Backend.PureSpec
 -- Description : Tests for the in-memory pure backend
 --
--- Tests for the pure in-memory MPF backend:
---
--- * Empty database properties
--- * Insert and query roundtrip via transactions
--- * Multiple column families work independently
--- * Cursor iteration over entries
+-- Unit tests and property tests for the pure in-memory MPF backend.
 module MPF.Backend.PureSpec (spec) where
 
+import Data.List (nubBy)
 import Data.Map.Strict qualified as Map
 import MPF.Backend.Pure
     ( MPFInMemoryDB (..)
     , emptyMPFInMemoryDB
     , runMPFPure
     )
-import MPF.Hashes (mkMPFHash)
+import MPF.Hashes (mkMPFHash, renderMPFHash)
 import MPF.Interface (byteStringToHexKey)
 import MPF.Test.Lib
     ( deleteMPFM
+    , genKeyBytes
+    , genValue
     , getRootHashM
     , insertMPFM
     , runMPFPure'
+    , toHexKey
+    , verifyMPFM
     )
 import Test.Hspec
+import Test.QuickCheck
+    ( forAll
+    , vectorOf
+    , (===)
+    , (==>)
+    )
 
 spec :: Spec
 spec = describe "MPF.Backend.Pure" $ do
@@ -104,3 +110,38 @@ spec = describe "MPF.Backend.Pure" $ do
             mRoot `shouldSatisfy` \case
                 Just _ -> True
                 Nothing -> False
+
+    describe "properties" $ do
+        it "sequential transactions compose correctly"
+            $ forAll (vectorOf 4 ((,) <$> genKeyBytes <*> genValue))
+            $ \rawKvs ->
+                let kvs =
+                        nubBy
+                            (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2)
+                            rawKvs
+                in  length kvs >= 2 ==>
+                        let kvHashed =
+                                [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
+                            (half1, half2) = splitAt (length kvHashed `div` 2) kvHashed
+                            -- All in one run
+                            (rootCombined, _) = runMPFPure' $ do
+                                mapM_ (uncurry insertMPFM) kvHashed
+                                getRootHashM
+                            -- Split across two runs
+                            (_, db1) = runMPFPure' $ do
+                                mapM_ (uncurry insertMPFM) half1
+                            (rootSplit, _) = runMPFPure db1 $ do
+                                mapM_ (uncurry insertMPFM) half2
+                                getRootHashM
+                        in  fmap renderMPFHash rootCombined
+                                === fmap renderMPFHash rootSplit
+
+        it "insert-query roundtrip in transactions"
+            $ forAll ((,) <$> genKeyBytes <*> genValue)
+            $ \(kb, vb) ->
+                let key = toHexKey kb
+                    val = mkMPFHash vb
+                    (verified, _) = runMPFPure' $ do
+                        insertMPFM key val
+                        verifyMPFM key val
+                in  verified === True
