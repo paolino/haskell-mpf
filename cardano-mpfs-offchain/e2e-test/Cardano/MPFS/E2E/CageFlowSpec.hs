@@ -29,7 +29,6 @@ import Test.Hspec
     , describe
     , expectationFailure
     , it
-    , pendingWith
     , runIO
     , shouldBe
     )
@@ -148,9 +147,6 @@ spec = describe "CageFlow E2E" $ do
 cageFlowSpec :: SBS.ShortByteString -> Spec
 cageFlowSpec scriptBytes =
     it "full cage flow via CageFollower" $ do
-        pendingWith
-            "UTxO resolver stub (#74) \
-            \— spend events not detected"
         withE2E scriptBytes $ \cfg ctx -> do
             -- Step 1: Boot token
             signedBoot <-
