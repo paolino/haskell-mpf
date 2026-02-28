@@ -206,6 +206,7 @@ test-suite e2e-tests
 
   other-modules:
     Cardano.MPFS.E2E.BootstrapSpec
+    Cardano.MPFS.E2E.CageFlowSpec
     Cardano.MPFS.E2E.CageSpec
     Cardano.MPFS.E2E.ChainSyncSpec
     Cardano.MPFS.E2E.Devnet
