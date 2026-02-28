@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+
 -- |
 -- Module      : Cardano.MPFS.Application
 -- Description : Application wiring and lifecycle
@@ -47,6 +49,14 @@ import Control.Exception (throwIO)
 import Control.Monad (when)
 import Control.Tracer (nullTracer)
 
+import Cardano.Ledger.Binary
+    ( DecCBOR
+    , DecoderError
+    , EncCBOR
+    , decodeFull
+    , natVersion
+    , serialize
+    )
 import Data.ByteString.Lazy qualified as BSL
 
 import Database.KV.Database (mkColumns)
@@ -54,6 +64,7 @@ import Database.KV.RocksDB (mkRocksDBDatabase)
 import Database.KV.Transaction
     ( mapColumns
     , newRunTransaction
+    , query
     )
 import Database.KV.Transaction qualified as L
     ( RunTransaction (..)
@@ -68,6 +79,9 @@ import Ouroboros.Network.Point (WithOrigin (..))
 
 import Cardano.UTxOCSMT.Application.ChainSyncN2C
     ( mkN2CChainSyncApplication
+    )
+import Cardano.UTxOCSMT.Application.Database.Implementation.Columns
+    ( Columns (..)
     )
 import Cardano.UTxOCSMT.Application.Database.Implementation.Transaction
     ( CSMTContext (..)
@@ -104,7 +118,10 @@ import Cardano.MPFS.Core.Bootstrap
     )
 import Cardano.MPFS.Core.Types
     ( BlockId (..)
+    , ConwayEra
     , SlotNo (..)
+    , TxIn
+    , TxOut
     )
 import Cardano.MPFS.Indexer.CageFollower
     ( mkCageIntersector
@@ -278,7 +295,10 @@ withApplication cfg action =
                     mChainThread <-
                         if followerEnabled cfg
                             then do
-                                let cageIntersector =
+                                let resolveUtxo =
+                                        mkUtxoResolver
+                                            utxoRt
+                                    cageIntersector =
                                         mkCageIntersector
                                             ( cfgScriptHash
                                                 $ cageConfig
@@ -287,7 +307,7 @@ withApplication cfg action =
                                             st
                                             tm
                                             cageRt
-                                            (\_ -> pure Nothing)
+                                            resolveUtxo
                                             (Syncing utxoUpdate)
                                     chainSyncApp =
                                         mkN2CChainSyncApplication
@@ -406,3 +426,42 @@ seedBootstrap (Just fp) st runner CSMTContext{..} =
                 hashing
                 (BSL.fromStrict k)
                 (BSL.fromStrict v)
+
+-- | Build a UTxO resolver that looks up spent
+-- 'TxIn' references in the CSMT's key-value
+-- column.  CBOR-encodes the 'TxIn', queries via
+-- the UTxO transaction runner, and CBOR-decodes
+-- the result back to @'TxOut' 'ConwayEra'@.
+mkUtxoResolver
+    :: CSMT.RunTransaction
+        cf
+        op
+        slot
+        hash
+        BSL.ByteString
+        BSL.ByteString
+        IO
+    -> TxIn
+    -> IO (Maybe (TxOut ConwayEra))
+mkUtxoResolver rt txIn = do
+    let key = cborEncode txIn
+    mVal <- CSMT.transact rt $ query KVCol key
+    pure $ case mVal of
+        Nothing -> Nothing
+        Just val -> case cborDecode val of
+            Left _ -> Nothing
+            Right txOut -> Just txOut
+
+-- | CBOR-encode a ledger type using protocol
+-- version 11, matching the encoding used by
+-- cardano-utxo-csmt for UTxO storage.
+cborEncode :: EncCBOR a => a -> BSL.ByteString
+cborEncode = serialize (natVersion @11)
+
+-- | CBOR-decode a ledger type using protocol
+-- version 11.
+cborDecode
+    :: DecCBOR a
+    => BSL.ByteString
+    -> Either DecoderError a
+cborDecode = decodeFull (natVersion @11)

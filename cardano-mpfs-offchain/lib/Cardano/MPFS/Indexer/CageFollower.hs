@@ -202,7 +202,24 @@ mkCageFollower
                     { fetchedPoint
                     , fetchedBlock
                     } = fetched
-            -- Step 1: Apply UTxO changes
+                slot =
+                    pointToSlot fetchedPoint
+                blockId =
+                    pointToBlockId fetchedPoint
+
+            -- Step 1: Process cage events BEFORE
+            -- UTxO update so spent inputs can still
+            -- be resolved from the CSMT.
+            invs <-
+                processCageBlock
+                    scriptHash
+                    cageSt
+                    tm
+                    resolveUtxo
+                    fetchedBlock
+
+            -- Step 2: Apply UTxO changes (deletes
+            -- spent inputs from CSMT)
             let ops =
                     changeToOp
                         <$> uTxOs fetchedBlock
@@ -219,19 +236,6 @@ mkCageFollower
                     error
                         "CageFollower.rollForward:\
                         \ not syncing"
-
-            -- Step 2: Process cage events
-            let slot =
-                    pointToSlot fetchedPoint
-                blockId =
-                    pointToBlockId fetchedPoint
-            invs <-
-                processCageBlock
-                    scriptHash
-                    cageSt
-                    tm
-                    resolveUtxo
-                    fetchedBlock
 
             -- Step 3: Store inverse ops
             storeRollback rt slot invs
