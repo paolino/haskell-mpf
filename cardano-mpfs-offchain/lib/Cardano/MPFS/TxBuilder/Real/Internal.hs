@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
@@ -43,14 +42,12 @@ module Cardano.MPFS.TxBuilder.Real.Internal
       -- * Indexing
     , spendingIndex
 
-      -- * Execution units
-    , defaultMintExUnits
-    , defaultSpendExUnits
-    , modifyExUnits
-    , contributeExUnits
-
       -- * Script integrity
     , computeScriptIntegrity
+
+      -- * Evaluate and balance
+    , evaluateAndBalance
+    , placeholderExUnits
 
       -- * Slot conversion
     , posixMsToSlot
@@ -66,7 +63,7 @@ import Data.ByteString.Short qualified as SBS
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Word (Word32)
-import Lens.Micro ((^.))
+import Lens.Micro ((&), (.~), (^.))
 
 import Cardano.Crypto.Hash (hashFromBytes, hashToBytes)
 import Cardano.Ledger.Address (Addr (..))
@@ -82,8 +79,11 @@ import Cardano.Ledger.Alonzo.Tx
     ( ScriptIntegrityHash
     , hashScriptIntegrity
     )
+import Cardano.Ledger.Alonzo.TxBody
+    ( scriptIntegrityHashTxBodyL
+    )
 import Cardano.Ledger.Alonzo.TxWits
-    ( Redeemers
+    ( Redeemers (..)
     , TxDats (..)
     )
 import Cardano.Ledger.Api.Scripts.Data
@@ -92,10 +92,21 @@ import Cardano.Ledger.Api.Scripts.Data
     , binaryDataToData
     , dataToBinaryData
     )
+import Cardano.Ledger.Api.Tx
+    ( Tx
+    , bodyTxL
+    , witsTxL
+    )
+import Cardano.Ledger.Api.Tx.Body
+    ( inputsTxBodyL
+    )
 import Cardano.Ledger.Api.Tx.Out
     ( TxOut
     , datumTxOutL
     , valueTxOutL
+    )
+import Cardano.Ledger.Api.Tx.Wits
+    ( rdmrsTxWitsL
     )
 import Cardano.Ledger.BaseTypes
     ( Network
@@ -153,9 +164,11 @@ import Cardano.MPFS.Core.Types
     , PParams
     , TokenId (..)
     )
+import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
+import Cardano.Node.Client.Balance (balanceTx)
 
 -- | Convert POSIX time (ms) to a 'SlotNo',
 -- rounding __down__ (floor). Use this for upper
@@ -194,37 +207,89 @@ posixMsCeilSlot cfg ms =
 emptyRoot :: ByteString
 emptyRoot = BS.replicate 32 0
 
--- | Hardcoded execution units for minting.
--- A later phase will use evaluateTx for precise
--- values.
-defaultMintExUnits :: ExUnits
-defaultMintExUnits =
-    ExUnits 14_000_000 500_000_000
+-- | Placeholder execution units used in the initial
+-- unbalanced transaction. Replaced with real values
+-- by 'evaluateAndBalance'.
+placeholderExUnits :: ExUnits
+placeholderExUnits = ExUnits 0 0
 
--- | Hardcoded execution units for spending.
-defaultSpendExUnits :: ExUnits
-defaultSpendExUnits =
-    ExUnits 14_000_000 500_000_000
-
--- | Execution units for the @Modify@ redeemer,
--- scaled by the number of proofs. Each proof
--- adds roughly 500M CPU steps for the on-chain
--- MPF fold.
-modifyExUnits
-    :: Int
-    -- ^ Number of proofs (one per request)
-    -> ExUnits
-modifyExUnits nProofs =
-    ExUnits
-        14_000_000
-        (fromIntegral nProofs * 500_000_000)
-
--- | Execution units for the @Contribute@ redeemer.
--- Contribute just checks the request token matches
--- the state token — much cheaper than @Modify@.
-contributeExUnits :: ExUnits
-contributeExUnits =
-    ExUnits 200_000 100_000_000
+-- | Evaluate script execution units and balance
+-- a transaction.
+--
+-- 1. Call 'evaluateTx' via 'Provider' on the
+--    unbalanced tx (with 'placeholderExUnits').
+-- 2. Patch each redeemer's 'ExUnits' from the
+--    evaluation result. When the result map is
+--    empty (mock\/test), placeholders are kept.
+-- 3. Recompute 'scriptIntegrityHash'.
+-- 4. Call 'balanceTx'.
+evaluateAndBalance
+    :: Provider IO
+    -> PParams ConwayEra
+    -> [(TxIn, TxOut ConwayEra)]
+    -- ^ All input UTxOs (fee + script)
+    -> Addr
+    -- ^ Change address
+    -> Tx ConwayEra
+    -- ^ Unbalanced tx with placeholder ExUnits
+    -> IO (Tx ConwayEra)
+evaluateAndBalance prov pp inputUtxos changeAddr tx =
+    do
+        -- Pre-add all input TxIns to the body so
+        -- the evaluator sees the complete input set
+        -- and spending indices match the redeemers.
+        let existingIns =
+                tx ^. bodyTxL . inputsTxBodyL
+            allIns =
+                foldl
+                    ( \s (tin, _) ->
+                        Set.insert tin s
+                    )
+                    existingIns
+                    inputUtxos
+            txForEval =
+                tx
+                    & bodyTxL . inputsTxBodyL
+                        .~ allIns
+        evalResult <- evaluateTx prov txForEval
+        let
+            -- Extract current redeemers
+            Redeemers rdmrMap =
+                tx ^. witsTxL . rdmrsTxWitsL
+            -- Patch ExUnits from eval result
+            patched =
+                Map.mapWithKey
+                    ( \purpose (dat, eu) ->
+                        case Map.lookup
+                            purpose
+                            evalResult of
+                            Just (Right eu') ->
+                                (dat, eu')
+                            _ -> (dat, eu)
+                    )
+                    rdmrMap
+            newRedeemers = Redeemers patched
+            integrity =
+                computeScriptIntegrity
+                    pp
+                    newRedeemers
+            patched' =
+                tx
+                    & witsTxL . rdmrsTxWitsL
+                        .~ newRedeemers
+                    & bodyTxL
+                        . scriptIntegrityHashTxBodyL
+                        .~ integrity
+        case balanceTx
+            pp
+            inputUtxos
+            changeAddr
+            patched' of
+            Left err ->
+                error
+                    $ "evaluateAndBalance: "
+                        <> show err
+            Right balanced -> pure balanced
 
 -- | Build the cage 'Script' from config bytes.
 mkCageScript

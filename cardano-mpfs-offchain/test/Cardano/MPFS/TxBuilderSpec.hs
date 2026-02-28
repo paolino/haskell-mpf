@@ -72,9 +72,6 @@ import Cardano.Ledger.Mary.Value
     , MultiAsset (..)
     , PolicyID (..)
     )
-import Cardano.Ledger.Plutus.ExUnits
-    ( ExUnits (..)
-    )
 import Cardano.Ledger.TxIn (TxIn)
 
 import Cardano.MPFS.Core.Blueprint
@@ -177,8 +174,7 @@ mkTestProvider utxos =
     Provider
         { queryUTxOs = \_ -> pure utxos
         , queryProtocolParams = pure zeroPP
-        , evaluateTx = \_ ->
-            pure (ExUnits 0 0)
+        , evaluateTx = \_ -> pure Map.empty
         }
 
 -- | Dummy TrieManager that errors on use.
@@ -219,8 +215,7 @@ mkRoutingProvider routes =
                         routes
                     )
         , queryProtocolParams = pure zeroPP
-        , evaluateTx = \_ ->
-            pure (ExUnits 0 0)
+        , evaluateTx = \_ -> pure Map.empty
         }
 
 -- | Build a state TxOut with the cage token.

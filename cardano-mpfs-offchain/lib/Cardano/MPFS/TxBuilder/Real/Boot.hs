@@ -76,7 +76,6 @@ import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
-import Cardano.Node.Client.Balance (balanceTx)
 
 -- | Build a boot-token minting transaction.
 --
@@ -165,7 +164,7 @@ bootTokenImpl cfg prov addr = do
                         $ Map.singleton
                             mintPurpose
                             ( toLedgerData redeemer
-                            , defaultMintExUnits
+                            , placeholderExUnits
                             )
             -- 6. Build tx body
             let integrity =
@@ -196,14 +195,10 @@ bootTokenImpl cfg prov addr = do
                                 script
                         & witsTxL . rdmrsTxWitsL
                             .~ redeemers
-            -- 7. Balance
-            case balanceTx
+            -- 7. Evaluate and balance
+            evaluateAndBalance
+                prov
                 pp
                 allInputUtxos
                 addr
-                tx of
-                Left err ->
-                    error
-                        $ "bootToken: "
-                            <> show err
-                Right balanced -> pure balanced
+                tx

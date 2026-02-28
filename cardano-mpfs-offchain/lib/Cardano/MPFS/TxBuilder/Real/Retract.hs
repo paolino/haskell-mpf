@@ -77,7 +77,6 @@ import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
-import Cardano.Node.Client.Balance (balanceTx)
 import PlutusTx.Builtins.Internal
     ( BuiltinByteString (..)
     )
@@ -194,7 +193,7 @@ retractRequestImpl cfg prov st reqTxIn addr = do
                 $ Map.singleton
                     spendPurpose
                     ( toLedgerData redeemer
-                    , defaultSpendExUnits
+                    , placeholderExUnits
                     )
         integrity =
             computeScriptIntegrity pp redeemers
@@ -224,13 +223,9 @@ retractRequestImpl cfg prov st reqTxIn addr = do
                         script
                 & witsTxL . rdmrsTxWitsL
                     .~ redeemers
-    case balanceTx
+    evaluateAndBalance
+        prov
         pp
         [feeUtxo, reqUtxoPair]
         addr
-        tx of
-        Left err ->
-            error
-                $ "retractRequest: "
-                    <> show err
-        Right balanced -> pure balanced
+        tx

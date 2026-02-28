@@ -5,8 +5,7 @@
 --
 -- Production implementation of the 'Provider'
 -- interface. Delegates to the @cardano-node-clients@
--- library for N2C LocalStateQuery queries, adding
--- the MPFS-specific 'evaluateTx' stub.
+-- library for N2C LocalStateQuery queries.
 module Cardano.MPFS.Provider.NodeClient
     ( -- * Construction
       mkNodeClientProvider
@@ -31,8 +30,6 @@ mkNodeClientProvider ch =
                 Lib.queryProtocolParams libProv
             , queryUTxOs =
                 Lib.queryUTxOs libProv
-            , evaluateTx = \_ ->
-                error
-                    "evaluateTx: requires local \
-                    \Plutus evaluator"
+            , evaluateTx =
+                Lib.evaluateTx libProv
             }

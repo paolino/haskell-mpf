@@ -5,7 +5,7 @@
 --
 -- Stub implementation of the 'Provider' interface
 -- for unit tests and wiring checks. Returns empty
--- UTxO sets and zero execution units.
+-- UTxO sets and empty evaluation results.
 -- 'queryProtocolParams' throws — tests that need
 -- real params should use a custom fixture instead.
 -- See "Cardano.MPFS.Provider.NodeClient" for the
@@ -15,12 +15,13 @@ module Cardano.MPFS.Mock.Provider
       mkMockProvider
     ) where
 
-import Cardano.MPFS.Core.Types (ExUnits (..))
+import Data.Map.Strict qualified as Map
+
 import Cardano.MPFS.Provider (Provider (..))
 
 -- | Create a mock 'Provider IO'. Returns empty UTxO
--- sets, default protocol params, and zero execution
--- units.
+-- sets, default protocol params, and empty evaluation
+-- results.
 mkMockProvider :: Provider IO
 mkMockProvider =
     Provider
@@ -30,5 +31,5 @@ mkMockProvider =
                 "mkMockProvider: queryProtocolParams \
                 \not implemented"
         , evaluateTx = \_ ->
-            pure (ExUnits 0 0)
+            pure Map.empty
         }

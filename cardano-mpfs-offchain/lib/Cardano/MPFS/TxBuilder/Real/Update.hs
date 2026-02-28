@@ -92,7 +92,6 @@ import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
-import Cardano.Node.Client.Balance (balanceTx)
 
 -- | Build an update-token transaction.
 --
@@ -221,7 +220,7 @@ updateTokenImpl cfg prov _st tm tid addr = do
                     in  ( ConwaySpending (AsIx ix)
                         ,
                             ( toLedgerData rdm
-                            , contributeExUnits
+                            , placeholderExUnits
                             )
                         )
                 )
@@ -233,8 +232,7 @@ updateTokenImpl cfg prov _st tm tid addr = do
                         (AsIx stateIx)
                   ,
                       ( toLedgerData modifyRedeemer
-                      , modifyExUnits
-                            (length proofs)
+                      , placeholderExUnits
                       )
                   )
                     : contributeEntries
@@ -286,15 +284,12 @@ updateTokenImpl cfg prov _st tm tid addr = do
                         script
                 & witsTxL . rdmrsTxWitsL
                     .~ redeemers
-    case balanceTx
+    evaluateAndBalance
+        prov
         pp
         (feeUtxo : stateUtxo : reqUtxos)
         addr
-        tx of
-        Left err ->
-            error
-                $ "updateToken: " <> show err
-        Right balanced -> pure balanced
+        tx
   where
     when False _ = pure ()
     when True act = act
