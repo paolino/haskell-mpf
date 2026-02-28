@@ -69,12 +69,12 @@ import Ouroboros.Network.Magic (NetworkMagic (..))
 
 import Cardano.MPFS.Core.Types (ConwayEra)
 import Cardano.MPFS.E2E.Devnet (withCardanoNode)
-import Cardano.MPFS.NodeClient.Connection
+import Cardano.Node.Client.N2C.Connection
     ( newLSQChannel
     , newLTxSChannel
     , runNodeClient
     )
-import Cardano.MPFS.NodeClient.Types
+import Cardano.Node.Client.N2C.Types
     ( LSQChannel
     , LTxSChannel
     )

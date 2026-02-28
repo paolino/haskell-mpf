@@ -1,53 +1,26 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE PatternSynonyms #-}
-
 -- |
 -- Module      : Cardano.MPFS.Submitter.N2C
 -- Description : N2C-backed transaction submitter
 -- License     : Apache-2.0
 --
 -- Production implementation of the 'Submitter'
--- interface. Sends signed transactions to a local
--- Cardano node via the N2C LocalTxSubmission
--- mini-protocol using an 'LTxSChannel' (see
--- "Cardano.MPFS.NodeClient.Connection").
---
--- The ledger 'Tx ConwayEra' is wrapped into a
--- consensus 'GenTx Block' before submission.
--- Rejection reasons are serialized to 'ByteString'
--- and returned as 'Rejected'.
+-- interface. Delegates to the @cardano-node-clients@
+-- library for N2C LocalTxSubmission, converting the
+-- library's 'SubmitResult' to the MPFS variant.
 module Cardano.MPFS.Submitter.N2C
     ( -- * Construction
       mkN2CSubmitter
     ) where
 
-import Data.ByteString.Char8 qualified as B8
+import Cardano.Ledger.Api.Tx (txIdTx)
 
-import Cardano.Ledger.Api.Tx (Tx, txIdTx)
+import Cardano.Node.Client.N2C.Submitter qualified as Lib
+import Cardano.Node.Client.N2C.Types (LTxSChannel)
+import Cardano.Node.Client.Submitter qualified as Lib
 
-import Ouroboros.Consensus.Cardano.Block
-    ( pattern GenTxConway
-    )
-import Ouroboros.Consensus.Cardano.CanHardFork ()
-import Ouroboros.Consensus.Shelley.Ledger.Mempool
-    ( mkShelleyTx
-    )
-import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
-
-import Cardano.MPFS.Core.Types (ConwayEra)
-import Cardano.MPFS.NodeClient.LocalTxSubmission
-    ( submitTxN2C
-    )
-import Cardano.MPFS.NodeClient.Types
-    ( Block
-    , LTxSChannel
-    )
 import Cardano.MPFS.Submitter
     ( SubmitResult (..)
     , Submitter (..)
-    )
-import Ouroboros.Consensus.Ledger.SupportsMempool
-    ( GenTx
     )
 
 -- | Create a 'Submitter IO' backed by the N2C
@@ -57,21 +30,14 @@ mkN2CSubmitter
     -- ^ LocalTxSubmission channel to the Cardano node
     -> Submitter IO
 mkN2CSubmitter ch =
-    Submitter
-        { submitTx = \tx -> do
-            let genTx = toGenTx tx
-            result <- submitTxN2C ch genTx
-            pure $ case result of
-                Right () ->
-                    Submitted (txIdTx tx)
-                Left err ->
-                    Rejected
-                        ( B8.pack
-                            (show err)
-                        )
-        }
-
--- | Convert a ledger 'Tx ConwayEra' to a consensus
--- 'GenTx Block'.
-toGenTx :: Tx ConwayEra -> GenTx Block
-toGenTx tx = GenTxConway (mkShelleyTx tx)
+    let libSub = Lib.mkN2CSubmitter ch
+    in  Submitter
+            { submitTx = \tx -> do
+                libResult <-
+                    Lib.submitTx libSub tx
+                pure $ case libResult of
+                    Lib.Submitted _ ->
+                        Submitted (txIdTx tx)
+                    Lib.Rejected reason ->
+                        Rejected reason
+            }

@@ -43,10 +43,6 @@ import Cardano.Ledger.Credential
     )
 import Cardano.Ledger.Keys (KeyHash, KeyRole (..))
 
-import Cardano.MPFS.Core.Balance
-    ( BalanceError (..)
-    , balanceTx
-    )
 import Cardano.MPFS.Core.Types
     ( Coin (..)
     , ConwayEra
@@ -55,6 +51,10 @@ import Cardano.MPFS.Core.Types
 import Cardano.MPFS.Generators
     ( genKeyHash
     , genTxIn
+    )
+import Cardano.Node.Client.Balance
+    ( BalanceError (..)
+    , balanceTx
     )
 
 -- | Testnet address from a payment key hash.

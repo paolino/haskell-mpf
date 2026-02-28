@@ -67,7 +67,6 @@ import PlutusTx.Builtins.Internal
     ( BuiltinByteString (..)
     )
 
-import Cardano.MPFS.Core.Balance (balanceTx)
 import Cardano.MPFS.Core.OnChain
     ( CageDatum (..)
     , OnChainOperation (..)
@@ -93,6 +92,7 @@ import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
+import Cardano.Node.Client.Balance (balanceTx)
 
 -- | Build an update-token transaction.
 --

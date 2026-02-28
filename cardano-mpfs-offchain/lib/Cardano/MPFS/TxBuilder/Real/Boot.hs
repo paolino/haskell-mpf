@@ -58,7 +58,6 @@ import PlutusTx.Builtins.Internal
     ( BuiltinByteString (..)
     )
 
-import Cardano.MPFS.Core.Balance (balanceTx)
 import Cardano.MPFS.Core.OnChain
     ( CageDatum (..)
     , Mint (..)
@@ -77,6 +76,7 @@ import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
+import Cardano.Node.Client.Balance (balanceTx)
 
 -- | Build a boot-token minting transaction.
 --

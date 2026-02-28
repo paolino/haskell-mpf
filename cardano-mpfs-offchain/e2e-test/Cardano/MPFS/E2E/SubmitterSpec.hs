@@ -30,7 +30,6 @@ import Cardano.Ledger.BaseTypes
     , StrictMaybe (SJust, SNothing)
     )
 
-import Cardano.MPFS.Core.Balance (balanceTx)
 import Cardano.MPFS.E2E.Setup
     ( addKeyWitness
     , genesisAddr
@@ -46,6 +45,7 @@ import Cardano.MPFS.Submitter
     , Submitter (..)
     )
 import Cardano.MPFS.Submitter.N2C (mkN2CSubmitter)
+import Cardano.Node.Client.Balance (balanceTx)
 
 spec :: Spec
 spec =

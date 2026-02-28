@@ -64,7 +64,6 @@ import Cardano.MPFS.Indexer.Event
     , CageInverseOp (..)
     , detectCageEvents
     )
-import Cardano.MPFS.NodeClient.Types qualified as NodeTypes
 import Cardano.MPFS.State
     ( Requests (..)
     , State (..)
@@ -74,6 +73,7 @@ import Cardano.MPFS.Trie
     ( Trie (..)
     , TrieManager (..)
     )
+import Cardano.Node.Client.Types qualified as NodeTypes
 
 -- | Extract Conway-era transactions from a multi-era
 -- Cardano block. Returns empty for non-Conway blocks.

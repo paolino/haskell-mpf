@@ -38,7 +38,6 @@ import Cardano.Ledger.Api.Tx.Out
     )
 import Cardano.Ledger.BaseTypes (Inject (..))
 
-import Cardano.MPFS.Core.Balance (balanceTx)
 import Cardano.MPFS.Core.OnChain
     ( OnChainOperation (..)
     )
@@ -54,6 +53,7 @@ import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
+import Cardano.Node.Client.Balance (balanceTx)
 
 -- | Build a request-insert transaction.
 --

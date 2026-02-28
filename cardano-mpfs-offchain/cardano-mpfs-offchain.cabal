@@ -43,11 +43,11 @@ library
     , cardano-ledger-alonzo
     , cardano-ledger-api
     , cardano-ledger-binary
-    , cardano-ledger-byron
     , cardano-ledger-conway
     , cardano-ledger-core
     , cardano-ledger-mary
     , cardano-ledger-shelley
+    , cardano-node-clients
     , cardano-strict-containers
     , cardano-utxo-csmt:application
     , cardano-utxo-csmt:library
@@ -60,28 +60,20 @@ library
     , merkle-patricia-forestry
     , merkle-patricia-forestry:mpf-test-lib
     , microlens
-    , network-mux
-    , ouroboros-consensus
     , ouroboros-consensus-cardano
-    , ouroboros-consensus-protocol
-    , ouroboros-network
     , ouroboros-network-api
-    , ouroboros-network-framework
-    , ouroboros-network-protocols
     , plutus-core
     , plutus-ledger-api
     , plutus-tx
     , rocksdb-haskell-jprupp
     , rocksdb-kv-transactions
     , rocksdb-kv-transactions:kv-transactions
-    , stm
     , text                                     >=2.0  && <2.2
     , time
 
   exposed-modules:
     Cardano.MPFS.Application
     Cardano.MPFS.Context
-    Cardano.MPFS.Core.Balance
     Cardano.MPFS.Core.Blueprint
     Cardano.MPFS.Core.Bootstrap
     Cardano.MPFS.Core.Bootstrap.Genesis
@@ -103,11 +95,6 @@ library
     Cardano.MPFS.Mock.State
     Cardano.MPFS.Mock.Submitter
     Cardano.MPFS.Mock.TxBuilder
-    Cardano.MPFS.NodeClient.Codecs
-    Cardano.MPFS.NodeClient.Connection
-    Cardano.MPFS.NodeClient.LocalStateQuery
-    Cardano.MPFS.NodeClient.LocalTxSubmission
-    Cardano.MPFS.NodeClient.Types
     Cardano.MPFS.Provider
     Cardano.MPFS.Provider.NodeClient
     Cardano.MPFS.State
@@ -153,6 +140,7 @@ test-suite unit-tests
     , cardano-ledger-core
     , cardano-ledger-mary
     , cardano-mpfs-offchain
+    , cardano-node-clients
     , containers
     , hspec                                    >=2.11 && <2.12
     , lens
@@ -204,6 +192,7 @@ test-suite e2e-tests
     , cardano-ledger-mary
     , cardano-ledger-shelley
     , cardano-mpfs-offchain
+    , cardano-node-clients
     , containers
     , directory
     , filepath

@@ -109,11 +109,6 @@ import Cardano.MPFS.Indexer.Persistent
 import Cardano.MPFS.Mock.Skeleton
     ( mkSkeletonIndexer
     )
-import Cardano.MPFS.NodeClient.Connection
-    ( newLSQChannel
-    , newLTxSChannel
-    , runNodeClient
-    )
 import Cardano.MPFS.Provider.NodeClient
     ( mkNodeClientProvider
     )
@@ -127,6 +122,11 @@ import Cardano.MPFS.TxBuilder.Config
     )
 import Cardano.MPFS.TxBuilder.Real
     ( mkRealTxBuilder
+    )
+import Cardano.Node.Client.N2C.Connection
+    ( newLSQChannel
+    , newLTxSChannel
+    , runNodeClient
     )
 
 -- | Application configuration.

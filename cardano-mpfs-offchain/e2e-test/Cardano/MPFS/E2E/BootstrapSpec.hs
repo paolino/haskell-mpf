@@ -55,13 +55,13 @@ import Cardano.MPFS.E2E.Setup
     , genesisDir
     , withDevnet
     )
-import Cardano.MPFS.NodeClient.Types
-    ( LSQChannel
-    , LTxSChannel
-    )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.Provider.NodeClient
     ( mkNodeClientProvider
+    )
+import Cardano.Node.Client.N2C.Types
+    ( LSQChannel
+    , LTxSChannel
     )
 
 -- | Expected serialised TxIn for the genesis address.
