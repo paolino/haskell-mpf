@@ -59,15 +59,6 @@ import Cardano.MPFS.Core.Types
     , Root (..)
     , TokenState (..)
     )
-import Cardano.MPFS.E2E.Devnet (withCardanoNode)
-import Cardano.MPFS.E2E.Setup
-    ( addKeyWitness
-    , devnetMagic
-    , genesisAddr
-    , genesisDir
-    , genesisSignKey
-    , keyHashFromSignKey
-    )
 import Cardano.MPFS.Indexer.Event
     ( CageEvent (..)
     , inversesOf
@@ -99,6 +90,15 @@ import Cardano.MPFS.TxBuilder.Config
 import Cardano.MPFS.TxBuilder.Real.Internal
     ( cageAddrFromCfg
     , computeScriptHash
+    )
+import Cardano.Node.Client.E2E.Devnet (withCardanoNode)
+import Cardano.Node.Client.E2E.Setup
+    ( addKeyWitness
+    , devnetMagic
+    , genesisAddr
+    , genesisDir
+    , genesisSignKey
+    , keyHashFromSignKey
     )
 
 -- | E2E indexer test spec.

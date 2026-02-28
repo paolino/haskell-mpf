@@ -181,10 +181,8 @@ test-suite e2e-tests
   hs-source-dirs:   e2e-test
   main-is:          main.hs
   build-depends:
-    , async
     , base
     , bytestring
-    , cardano-crypto-class
     , cardano-ledger-allegra
     , cardano-ledger-api
     , cardano-ledger-binary
@@ -193,24 +191,20 @@ test-suite e2e-tests
     , cardano-ledger-shelley
     , cardano-mpfs-offchain
     , cardano-node-clients
+    , cardano-node-clients:devnet
     , containers
     , directory
     , filepath
-    , hspec                   >=2.11 && <2.12
+    , hspec                        >=2.11 && <2.12
     , microlens
-    , ouroboros-network-api
     , process
     , temporary
-    , time
-    , unix
 
   other-modules:
     Cardano.MPFS.E2E.BootstrapSpec
     Cardano.MPFS.E2E.CageFlowSpec
     Cardano.MPFS.E2E.CageSpec
     Cardano.MPFS.E2E.ChainSyncSpec
-    Cardano.MPFS.E2E.Devnet
     Cardano.MPFS.E2E.IndexerSpec
     Cardano.MPFS.E2E.ProviderSpec
-    Cardano.MPFS.E2E.Setup
     Cardano.MPFS.E2E.SubmitterSpec

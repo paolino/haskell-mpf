@@ -50,14 +50,14 @@ import Cardano.MPFS.Core.Bootstrap
     ( BootstrapHeader (..)
     , foldBootstrapEntries
     )
-import Cardano.MPFS.E2E.Setup
-    ( genesisAddr
-    , genesisDir
-    , withDevnet
-    )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.Provider.NodeClient
     ( mkNodeClientProvider
+    )
+import Cardano.Node.Client.E2E.Setup
+    ( genesisAddr
+    , genesisDir
+    , withDevnet
     )
 import Cardano.Node.Client.N2C.Types
     ( LSQChannel
