@@ -18,13 +18,13 @@ import Test.Hspec
 
 import Cardano.Ledger.Api.PParams (ppMaxTxSizeL)
 
-import Cardano.MPFS.E2E.Setup
-    ( genesisAddr
-    , withDevnet
-    )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.Provider.NodeClient
     ( mkNodeClientProvider
+    )
+import Cardano.Node.Client.E2E.Setup
+    ( genesisAddr
+    , withDevnet
     )
 
 spec :: Spec

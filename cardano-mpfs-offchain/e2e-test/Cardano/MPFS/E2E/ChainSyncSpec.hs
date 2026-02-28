@@ -62,15 +62,6 @@ import Cardano.MPFS.Core.Types
     , TokenId (..)
     , TokenState (..)
     )
-import Cardano.MPFS.E2E.Devnet (withCardanoNode)
-import Cardano.MPFS.E2E.Setup
-    ( addKeyWitness
-    , devnetMagic
-    , genesisAddr
-    , genesisDir
-    , genesisSignKey
-    , keyHashFromSignKey
-    )
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.State
     ( Checkpoints (..)
@@ -89,6 +80,15 @@ import Cardano.MPFS.TxBuilder.Config
 import Cardano.MPFS.TxBuilder.Real.Internal
     ( cagePolicyIdFromCfg
     , computeScriptHash
+    )
+import Cardano.Node.Client.E2E.Devnet (withCardanoNode)
+import Cardano.Node.Client.E2E.Setup
+    ( addKeyWitness
+    , devnetMagic
+    , genesisAddr
+    , genesisDir
+    , genesisSignKey
+    , keyHashFromSignKey
     )
 
 -- | ChainSync E2E test spec.
