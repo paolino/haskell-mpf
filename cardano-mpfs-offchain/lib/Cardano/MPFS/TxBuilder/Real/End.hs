@@ -63,7 +63,6 @@ import Cardano.MPFS.TxBuilder.Config
     ( CageConfig (..)
     )
 import Cardano.MPFS.TxBuilder.Real.Internal
-import Cardano.Node.Client.Balance (balanceTx)
 
 import Data.List (sortOn)
 import Data.Ord (Down (..))
@@ -142,14 +141,14 @@ endTokenImpl cfg prov tid addr = do
                             (AsIx stateIx)
                         ,
                             ( toLedgerData spendRedeemer
-                            , defaultSpendExUnits
+                            , placeholderExUnits
                             )
                         )
                     ,
                         ( ConwayMinting (AsIx 0)
                         ,
                             ( toLedgerData mintRedeemer
-                            , defaultMintExUnits
+                            , placeholderExUnits
                             )
                         )
                     ]
@@ -176,12 +175,9 @@ endTokenImpl cfg prov tid addr = do
                         script
                 & witsTxL . rdmrsTxWitsL
                     .~ redeemers
-    case balanceTx
+    evaluateAndBalance
+        prov
         pp
         [feeUtxo, stateUtxo]
         addr
-        tx of
-        Left err ->
-            error
-                $ "endToken: " <> show err
-        Right balanced -> pure balanced
+        tx
