@@ -315,6 +315,57 @@ mkStateTxOut =
             & datumTxOutL
                 .~ mkInlineDatum (toPlcData datum)
 
+-- | Build a request TxOut with tight locked ADA.
+-- Uses 'requestLockedAda' to compute the minimum,
+-- matching what a real request transaction would lock.
+mkTightRequestTxOut
+    :: PParams ConwayEra -> TxOut ConwayEra
+mkTightRequestTxOut pp =
+    let datum =
+            RequestDatum
+                OnChainRequest
+                    { requestToken =
+                        OnChainTokenId
+                            $ BuiltinByteString
+                            $ SBS.fromShort
+                            $ let AssetName sbs =
+                                    unTokenId testTid
+                              in  sbs
+                    , requestOwner =
+                        BuiltinByteString
+                            ( hashToBytes
+                                $ let KeyHash h = testKh
+                                  in  h
+                            )
+                    , requestKey = "mykey"
+                    , requestValue =
+                        OpInsert "myvalue"
+                    , requestFee = 1_000_000
+                    , requestSubmittedAt = 0
+                    }
+        scriptAddr = cageAddr Testnet
+        feeAddr = testAddr testKh
+        draftOut =
+            mkBasicTxOut
+                scriptAddr
+                (inject (Coin 0))
+                & datumTxOutL
+                    .~ mkInlineDatum
+                        (toPlcData datum)
+        refDraft =
+            mkBasicTxOut
+                feeAddr
+                (inject (Coin 0))
+        minAda =
+            requestLockedAda
+                pp
+                draftOut
+                refDraft
+                1_000_000
+    in  mkBasicTxOut scriptAddr (inject minAda)
+            & datumTxOutL
+                .~ mkInlineDatum (toPlcData datum)
+
 -- | Build a request TxOut.
 mkRequestTxOut :: TxOut ConwayEra
 mkRequestTxOut =
@@ -1150,6 +1201,20 @@ updateTxProps =
                 _ ->
                     expectationFailure "no refund output"
 
+        it "refund meets minUTxO with tight locked ADA" $ do
+            tx <- runTightUpdate
+            let outs = toOutList tx
+            case drop 1 outs of
+                (refund : _) -> do
+                    let c = refund ^. coinTxOutL
+                        minC =
+                            getMinCoinTxOut
+                                realisticPP
+                                refund
+                    c `shouldSatisfy` (>= minC)
+                _ ->
+                    expectationFailure "no refund output"
+
         it "exactly 1 script witness" $ do
             tx <- runRealisticUpdate
             let scripts =
@@ -1834,6 +1899,60 @@ runRealisticUpdateWith = do
     tx <-
         updateToken builder testTid feeAddr
     pure (tx, stateIn, reqIn)
+
+-- | Run updateToken with tight request locked ADA.
+-- The request UTxO has the minimum locked ADA
+-- computed by 'requestLockedAda', so the refund
+-- is at the minUTxO boundary.
+runTightUpdate :: IO (Tx ConwayEra)
+runTightUpdate = do
+    st <- mkMockState
+    let ts =
+            TokenState
+                { owner = testKh
+                , root = Root (BS.replicate 32 0)
+                , maxFee = Coin 1_000_000
+                , processTime = 300_000
+                , retractTime = 600_000
+                }
+    putToken (tokens st) testTid ts
+    stateIn <- generate genTxIn
+    reqIn <- generate genTxIn
+    feeIn <- generate genTxIn
+    let scriptAddr = cageAddr Testnet
+        feeAddr = testAddr testKh
+        cageUtxos =
+            [ (stateIn, mkStateTxOut)
+            ,
+                ( reqIn
+                , mkTightRequestTxOut realisticPP
+                )
+            ]
+        walletUtxos =
+            [
+                ( feeIn
+                , mkBasicTxOut
+                    feeAddr
+                    (inject (Coin 50_000_000))
+                )
+            ]
+        prov =
+            mkRealisticRoutingProvider
+                [ (scriptAddr, cageUtxos)
+                , (feeAddr, walletUtxos)
+                ]
+    trieManager <- mkPureTrieManager
+    createTrie trieManager testTid
+    withTrie trieManager testTid $ \trie -> do
+        _ <- insert trie "mykey" "existing"
+        pure ()
+    let builder =
+            mkRealTxBuilder
+                testCageConfig
+                prov
+                st
+                trieManager
+    updateToken builder testTid feeAddr
 
 -- | Run retractRequest with realistic PParams
 -- and return details.
