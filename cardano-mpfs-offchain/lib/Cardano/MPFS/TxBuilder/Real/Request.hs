@@ -1,5 +1,3 @@
-{-# LANGUAGE NumericUnderscores #-}
-
 -- |
 -- Module      : Cardano.MPFS.TxBuilder.Real.Request
 -- Description : Request insert/delete transactions
@@ -13,6 +11,7 @@
 module Cardano.MPFS.TxBuilder.Real.Request
     ( requestInsertImpl
     , requestDeleteImpl
+    , requestLockedAda
     ) where
 
 import Data.ByteString (ByteString)
@@ -32,8 +31,10 @@ import Cardano.Ledger.Api.Tx.Body
     , outputsTxBodyL
     )
 import Cardano.Ledger.Api.Tx.Out
-    ( coinTxOutL
+    ( TxOut
+    , coinTxOutL
     , datumTxOutL
+    , getMinCoinTxOut
     , mkBasicTxOut
     )
 import Cardano.Ledger.BaseTypes (Inject (..))
@@ -44,6 +45,7 @@ import Cardano.MPFS.Core.OnChain
 import Cardano.MPFS.Core.Types
     ( Coin (..)
     , ConwayEra
+    , PParams
     , TokenId
     , TokenState (..)
     )
@@ -101,7 +103,20 @@ requestInsertImpl cfg prov st tid key value addr =
                     mf
                     now
             scriptAddr = cageAddrFromCfg cfg (network cfg)
-            minAda = Coin (2_000_000 + mf)
+            draftOut =
+                mkBasicTxOut
+                    scriptAddr
+                    (inject (Coin 0))
+                    & datumTxOutL
+                        .~ mkInlineDatum datum
+            refundDraft =
+                mkBasicTxOut addr (inject (Coin 0))
+            minAda =
+                requestLockedAda
+                    pp
+                    draftOut
+                    refundDraft
+                    mf
             txOut =
                 mkBasicTxOut
                     scriptAddr
@@ -160,7 +175,20 @@ requestDeleteImpl cfg prov st tid key addr = do
                 mf
                 now
         scriptAddr = cageAddrFromCfg cfg (network cfg)
-        minAda = Coin (2_000_000 + mf)
+        draftOut =
+            mkBasicTxOut
+                scriptAddr
+                (inject (Coin 0))
+                & datumTxOutL
+                    .~ mkInlineDatum datum
+        refundDraft =
+            mkBasicTxOut addr (inject (Coin 0))
+        minAda =
+            requestLockedAda
+                pp
+                draftOut
+                refundDraft
+                mf
         txOut =
             mkBasicTxOut
                 scriptAddr
@@ -178,6 +206,34 @@ requestDeleteImpl cfg prov st tid key addr = do
                 $ "requestDelete: "
                     <> show err
         Right balanced -> pure balanced
+
+-- | Compute the ADA to lock in a request output.
+--
+-- Two constraints must be satisfied:
+--
+-- 1. The locked amount >= minUTxO for the request
+--    output (which carries an inline datum).
+-- 2. After the oracle deducts @maxFee@, the
+--    remaining ADA (the refund) >= minUTxO for the
+--    refund output (a plain payment).
+--
+-- Returns @max(reqMinUTxO, maxFee + refundMinUTxO)@.
+requestLockedAda
+    :: PParams ConwayEra
+    -- ^ Protocol parameters
+    -> TxOut ConwayEra
+    -- ^ Draft request output (with datum)
+    -> TxOut ConwayEra
+    -- ^ Draft refund output (plain address)
+    -> Integer
+    -- ^ maxFee (lovelace)
+    -> Coin
+requestLockedAda pp reqDraft refDraft mf =
+    let Coin reqMin =
+            getMinCoinTxOut pp reqDraft
+        Coin refMin =
+            getMinCoinTxOut pp refDraft
+    in  Coin (max reqMin (mf + refMin))
 
 -- | Get current POSIX time in milliseconds.
 currentPosixMs :: IO Integer

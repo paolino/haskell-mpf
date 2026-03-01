@@ -8,6 +8,7 @@ module Cardano.MPFS.TxBuilderSpec (spec) where
 import Data.ByteString qualified as BS
 import Data.ByteString.Short qualified as SBS
 import Data.Foldable (for_)
+import Data.List (sort)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust, fromMaybe, isJust)
 import Data.Set qualified as Set
@@ -23,7 +24,11 @@ import Test.Hspec
     , shouldBe
     , shouldSatisfy
     )
-import Test.QuickCheck (generate)
+import Test.QuickCheck
+    ( forAll
+    , generate
+    , property
+    )
 
 import Cardano.Crypto.Hash
     ( Blake2b_224
@@ -31,22 +36,33 @@ import Cardano.Crypto.Hash
     , hashToBytes
     )
 import Cardano.Ledger.Address (Addr (..))
-import Cardano.Ledger.Api.PParams (emptyPParams)
+import Cardano.Ledger.Allegra.Scripts
+    ( ValidityInterval (..)
+    )
+import Cardano.Ledger.Api.PParams
+    ( emptyPParams
+    , ppCoinsPerUTxOByteL
+    )
 import Cardano.Ledger.Api.Tx
     ( Tx
     , bodyTxL
     , witsTxL
     )
 import Cardano.Ledger.Api.Tx.Body
-    ( inputsTxBodyL
+    ( collateralInputsTxBodyL
+    , feeTxBodyL
+    , inputsTxBodyL
     , mintTxBodyL
     , outputsTxBodyL
     , referenceInputsTxBodyL
+    , reqSignerHashesTxBodyL
+    , vldtTxBodyL
     )
 import Cardano.Ledger.Api.Tx.Out
     ( TxOut
     , coinTxOutL
     , datumTxOutL
+    , getMinCoinTxOut
     , mkBasicTxOut
     )
 import Cardano.Ledger.Api.Tx.Wits
@@ -54,9 +70,13 @@ import Cardano.Ledger.Api.Tx.Wits
     , rdmrsTxWitsL
     , scriptTxWitsL
     )
+import Cardano.Ledger.Babbage.PParams
+    ( CoinPerByte (..)
+    )
 import Cardano.Ledger.BaseTypes
     ( Inject (..)
     , Network (..)
+    , StrictMaybe (..)
     )
 import Cardano.Ledger.Credential
     ( Credential (..)
@@ -101,7 +121,14 @@ import Cardano.MPFS.Core.Types
     , TokenId (..)
     , TokenState (..)
     )
-import Cardano.MPFS.Generators (genTxIn)
+import Cardano.MPFS.Generators
+    ( genKeyHash
+    , genMaxFee
+    , genTokenId
+    , genTrieKey
+    , genTrieValue
+    , genTxIn
+    )
 import Cardano.MPFS.Mock.State (mkMockState)
 import Cardano.MPFS.Provider (Provider (..))
 import Cardano.MPFS.State
@@ -120,8 +147,12 @@ import Cardano.MPFS.TxBuilder (TxBuilder (..))
 import Cardano.MPFS.TxBuilder.Config (CageConfig (..))
 import Cardano.MPFS.TxBuilder.Real
     ( computeScriptHash
+    , extractCageDatum
     , mkInlineDatum
     , mkRealTxBuilder
+    , mkRequestDatum
+    , requestLockedAda
+    , spendingIndex
     , toPlcData
     )
 import PlutusTx.Builtins.Internal
@@ -149,6 +180,13 @@ testKh =
 -- | Zero-fee PParams for deterministic balancing.
 zeroPP :: PParams ConwayEra
 zeroPP = emptyPParams
+
+-- | Realistic PParams with mainnet coinsPerUTxOByte.
+realisticPP :: PParams ConwayEra
+realisticPP =
+    emptyPParams
+        & ppCoinsPerUTxOByteL
+            .~ CoinPerByte (Coin 4310)
 
 -- | Cage config for testing with testnet.
 -- requestInsert\/requestDelete don't use the script
@@ -215,6 +253,34 @@ mkRoutingProvider routes =
                         routes
                     )
         , queryProtocolParams = pure zeroPP
+        , evaluateTx = \_ -> pure Map.empty
+        }
+
+-- | Provider with realistic PParams.
+mkRealisticProvider
+    :: [(TxIn, TxOut ConwayEra)] -> Provider IO
+mkRealisticProvider utxos =
+    Provider
+        { queryUTxOs = \_ -> pure utxos
+        , queryProtocolParams = pure realisticPP
+        , evaluateTx = \_ -> pure Map.empty
+        }
+
+-- | Routing provider with realistic PParams.
+mkRealisticRoutingProvider
+    :: [(Addr, [(TxIn, TxOut ConwayEra)])]
+    -> Provider IO
+mkRealisticRoutingProvider routes =
+    Provider
+        { queryUTxOs = \addr ->
+            pure
+                $ fromMaybe
+                    []
+                    ( Prelude.lookup
+                        addr
+                        routes
+                    )
+        , queryProtocolParams = pure realisticPP
         , evaluateTx = \_ -> pure Map.empty
         }
 
@@ -292,6 +358,13 @@ spec = describe "Cardano.MPFS.TxBuilder.Real" $ do
     updateTokenSpec
     endTokenSpec
     bootTokenSpec
+    requestLockedAdaProps
+    spendingIndexProps
+    requestTxProps
+    updateTxProps
+    retractTxProps
+    endTxProps
+    bootTxProps
 
 -- ---------------------------------------------------------
 -- Cage identity
@@ -342,13 +415,13 @@ requestInsertSpec =
             length outList
                 `shouldSatisfy` (>= 2)
 
-        it "cage output has maxFee + 2 ADA" $ do
+        it "cage output has maxFee (zeroPP)" $ do
             tx <- runRequestInsert
             case toOutList tx of
                 (cageOut : _) -> do
                     let outCoin = cageOut ^. coinTxOutL
-                    -- maxFee=1M + minAda=2M = 3M
-                    outCoin `shouldBe` Coin 3_000_000
+                    -- zeroPP: minUTxO=0, so locked=maxFee
+                    outCoin `shouldBe` Coin 1_000_000
                 [] -> expectationFailure "no outputs"
 
         it "has no mint field" $ do
@@ -380,12 +453,13 @@ requestDeleteSpec =
             length outList
                 `shouldSatisfy` (>= 2)
 
-        it "cage output has maxFee + 2 ADA" $ do
+        it "cage output has maxFee (zeroPP)" $ do
             tx <- runRequestDelete
             case toOutList tx of
                 (cageOut : _) -> do
                     let outCoin = cageOut ^. coinTxOutL
-                    outCoin `shouldBe` Coin 3_000_000
+                    -- zeroPP: minUTxO=0, so locked=maxFee
+                    outCoin `shouldBe` Coin 1_000_000
                 [] -> expectationFailure "no outputs"
 
         it "has no mint field" $ do
@@ -623,6 +697,756 @@ bootTokenWithScript scriptBytes = do
                 let outCoin = cageOut ^. coinTxOutL
                 outCoin `shouldBe` Coin 2_000_000
             [] -> expectationFailure "no outputs"
+
+-- ---------------------------------------------------------
+-- Group A: requestLockedAda (pure)
+-- ---------------------------------------------------------
+
+requestLockedAdaProps :: Spec
+requestLockedAdaProps =
+    describe "requestLockedAda" $ do
+        it "locked >= request minUTxO"
+            $ property
+            $ forAll genTokenId
+            $ \tid ->
+                forAll genKeyHash $ \kh ->
+                    forAll genTrieKey $ \key ->
+                        forAll genTrieValue $ \val ->
+                            forAll genMaxFee
+                                $ \(Coin mf) ->
+                                    let addr = testAddr kh
+                                        sAddr =
+                                            cageAddr
+                                                Testnet
+                                        datum =
+                                            mkRequestDatum
+                                                tid
+                                                addr
+                                                key
+                                                ( OpInsert
+                                                    val
+                                                )
+                                                mf
+                                                0
+                                        draft =
+                                            mkBasicTxOut
+                                                sAddr
+                                                ( inject
+                                                    (Coin 0)
+                                                )
+                                                & datumTxOutL
+                                                    .~ mkInlineDatum
+                                                        datum
+                                        refDraft =
+                                            mkBasicTxOut
+                                                addr
+                                                ( inject
+                                                    (Coin 0)
+                                                )
+                                        la =
+                                            requestLockedAda
+                                                realisticPP
+                                                draft
+                                                refDraft
+                                                mf
+                                        reqMin =
+                                            getMinCoinTxOut
+                                                realisticPP
+                                                draft
+                                    in  la >= reqMin
+
+        it "locked >= maxFee + refund minUTxO"
+            $ property
+            $ forAll genTokenId
+            $ \tid ->
+                forAll genKeyHash $ \kh ->
+                    forAll genTrieKey $ \key ->
+                        forAll genTrieValue $ \val ->
+                            forAll genMaxFee
+                                $ \(Coin mf) ->
+                                    let addr = testAddr kh
+                                        sAddr =
+                                            cageAddr
+                                                Testnet
+                                        datum =
+                                            mkRequestDatum
+                                                tid
+                                                addr
+                                                key
+                                                ( OpInsert
+                                                    val
+                                                )
+                                                mf
+                                                0
+                                        draft =
+                                            mkBasicTxOut
+                                                sAddr
+                                                ( inject
+                                                    (Coin 0)
+                                                )
+                                                & datumTxOutL
+                                                    .~ mkInlineDatum
+                                                        datum
+                                        refDraft =
+                                            mkBasicTxOut
+                                                addr
+                                                ( inject
+                                                    (Coin 0)
+                                                )
+                                        Coin la =
+                                            requestLockedAda
+                                                realisticPP
+                                                draft
+                                                refDraft
+                                                mf
+                                        Coin refMin =
+                                            getMinCoinTxOut
+                                                realisticPP
+                                                refDraft
+                                    in  la >= mf + refMin
+
+        it "locked is tight"
+            $ property
+            $ forAll genTokenId
+            $ \tid ->
+                forAll genKeyHash $ \kh ->
+                    forAll genTrieKey $ \key ->
+                        forAll genTrieValue $ \val ->
+                            forAll genMaxFee
+                                $ \(Coin mf) ->
+                                    let addr = testAddr kh
+                                        sAddr =
+                                            cageAddr
+                                                Testnet
+                                        datum =
+                                            mkRequestDatum
+                                                tid
+                                                addr
+                                                key
+                                                ( OpInsert
+                                                    val
+                                                )
+                                                mf
+                                                0
+                                        draft =
+                                            mkBasicTxOut
+                                                sAddr
+                                                ( inject
+                                                    (Coin 0)
+                                                )
+                                                & datumTxOutL
+                                                    .~ mkInlineDatum
+                                                        datum
+                                        refDraft =
+                                            mkBasicTxOut
+                                                addr
+                                                ( inject
+                                                    (Coin 0)
+                                                )
+                                        la =
+                                            requestLockedAda
+                                                realisticPP
+                                                draft
+                                                refDraft
+                                                mf
+                                        Coin reqMin =
+                                            getMinCoinTxOut
+                                                realisticPP
+                                                draft
+                                        Coin refMin =
+                                            getMinCoinTxOut
+                                                realisticPP
+                                                refDraft
+                                    in  la
+                                            == Coin
+                                                ( max
+                                                    reqMin
+                                                    ( mf
+                                                        + refMin
+                                                    )
+                                                )
+
+        it "zeroPP backward compat"
+            $ property
+            $ forAll genTokenId
+            $ \tid ->
+                forAll genKeyHash $ \kh ->
+                    forAll genTrieKey $ \key ->
+                        forAll genTrieValue $ \val ->
+                            forAll genMaxFee
+                                $ \(Coin mf) ->
+                                    let addr = testAddr kh
+                                        sAddr =
+                                            cageAddr
+                                                Testnet
+                                        datum =
+                                            mkRequestDatum
+                                                tid
+                                                addr
+                                                key
+                                                ( OpInsert
+                                                    val
+                                                )
+                                                mf
+                                                0
+                                        draft =
+                                            mkBasicTxOut
+                                                sAddr
+                                                ( inject
+                                                    (Coin 0)
+                                                )
+                                                & datumTxOutL
+                                                    .~ mkInlineDatum
+                                                        datum
+                                        refDraft =
+                                            mkBasicTxOut
+                                                addr
+                                                ( inject
+                                                    (Coin 0)
+                                                )
+                                        la =
+                                            requestLockedAda
+                                                zeroPP
+                                                draft
+                                                refDraft
+                                                mf
+                                    in  la == Coin mf
+
+-- ---------------------------------------------------------
+-- Group B: spendingIndex (pure)
+-- ---------------------------------------------------------
+
+spendingIndexProps :: Spec
+spendingIndexProps =
+    describe "spendingIndex" $ do
+        it "matches sorted position"
+            $ property
+            $ forAll genTxIn
+            $ \a ->
+                forAll genTxIn $ \b ->
+                    forAll genTxIn $ \c ->
+                        let ins =
+                                Set.fromList [a, b, c]
+                            sorted =
+                                Set.toAscList ins
+                        in  all
+                                ( \(i, txIn) ->
+                                    spendingIndex
+                                        txIn
+                                        ins
+                                        == fromIntegral i
+                                )
+                                (zip [0 :: Int ..] sorted)
+
+        it "covers all indices"
+            $ property
+            $ forAll genTxIn
+            $ \a ->
+                forAll genTxIn $ \b ->
+                    forAll genTxIn $ \c ->
+                        let ins =
+                                Set.fromList [a, b, c]
+                            n = Set.size ins
+                            indices =
+                                sort
+                                    $ map
+                                        (`spendingIndex` ins)
+                                    $ Set.toList ins
+                        in  indices
+                                == map
+                                    fromIntegral
+                                    [0 .. n - 1]
+
+-- ---------------------------------------------------------
+-- Group C: Request tx properties (IO, realistic PParams)
+-- ---------------------------------------------------------
+
+requestTxProps :: Spec
+requestTxProps =
+    describe "request tx (realistic PParams)" $ do
+        it "cage output satisfies minUTxO" $ do
+            tx <- runRealisticRequestInsert
+            case toOutList tx of
+                (cageOut : _) -> do
+                    let c = cageOut ^. coinTxOutL
+                        minC =
+                            getMinCoinTxOut
+                                realisticPP
+                                cageOut
+                    c `shouldSatisfy` (>= minC)
+                [] -> expectationFailure "no outputs"
+
+        it "all outputs satisfy minUTxO" $ do
+            tx <- runRealisticRequestInsert
+            let outs = toOutList tx
+            for_ outs $ \o -> do
+                let c = o ^. coinTxOutL
+                    minC =
+                        getMinCoinTxOut
+                            realisticPP
+                            o
+                c `shouldSatisfy` (>= minC)
+
+        it "value preservation" $ do
+            (tx, _) <-
+                runRealisticRequestInsertWith
+            let body = tx ^. bodyTxL
+                Coin fee = body ^. feeTxBodyL
+                outSum =
+                    sum
+                        $ map
+                            (\o -> let Coin c = o ^. coinTxOutL in c)
+                        $ toOutList tx
+                inSum =
+                    50_000_000 :: Integer
+            inSum `shouldSatisfy` (>= outSum + fee)
+
+        it "cage datum has correct token" $ do
+            tx <- runRealisticRequestInsert
+            case toOutList tx of
+                (cageOut : _) ->
+                    case extractCageDatum cageOut of
+                        Just
+                            ( RequestDatum
+                                    OnChainRequest
+                                        { requestToken =
+                                            OnChainTokenId
+                                                ( BuiltinByteString
+                                                        bs
+                                                    )
+                                        }
+                                ) ->
+                                let AssetName sbs =
+                                        unTokenId testTid
+                                in  bs
+                                        `shouldBe` SBS.fromShort
+                                            sbs
+                        _ ->
+                            expectationFailure
+                                "not a RequestDatum"
+                [] -> expectationFailure "no outputs"
+
+        it "cage datum has correct owner" $ do
+            tx <- runRealisticRequestInsert
+            case toOutList tx of
+                (cageOut : _) ->
+                    case extractCageDatum cageOut of
+                        Just
+                            ( RequestDatum
+                                    OnChainRequest
+                                        { requestOwner =
+                                            BuiltinByteString
+                                                bs
+                                        }
+                                ) ->
+                                let KeyHash h = testKh
+                                in  bs
+                                        `shouldBe` hashToBytes
+                                            h
+                        _ ->
+                            expectationFailure
+                                "not a RequestDatum"
+                [] -> expectationFailure "no outputs"
+
+        it "cage datum has correct key" $ do
+            tx <- runRealisticRequestInsert
+            case toOutList tx of
+                (cageOut : _) ->
+                    case extractCageDatum cageOut of
+                        Just
+                            ( RequestDatum
+                                    OnChainRequest
+                                        { requestKey = k
+                                        }
+                                ) ->
+                                k `shouldBe` "mykey"
+                        _ ->
+                            expectationFailure
+                                "not a RequestDatum"
+                [] -> expectationFailure "no outputs"
+
+        it "no minting" $ do
+            tx <- runRealisticRequestInsert
+            let mint = tx ^. bodyTxL . mintTxBodyL
+            mint `shouldBe` mempty
+
+        it "no script witnesses" $ do
+            tx <- runRealisticRequestInsert
+            let scripts =
+                    tx ^. witsTxL . scriptTxWitsL
+            Map.size scripts `shouldBe` 0
+
+-- ---------------------------------------------------------
+-- Group D: Update tx properties (IO, realistic PParams)
+-- ---------------------------------------------------------
+
+updateTxProps :: Spec
+updateTxProps =
+    describe "update tx (realistic PParams)" $ do
+        it "value preservation" $ do
+            (tx, _, _) <-
+                runRealisticUpdateWith
+            let body = tx ^. bodyTxL
+                Coin fee = body ^. feeTxBodyL
+                outSum =
+                    sum
+                        $ map
+                            (\o -> let Coin c = o ^. coinTxOutL in c)
+                        $ toOutList tx
+                -- state(2M) + request(3M) + fee(50M)
+                inSum =
+                    2_000_000
+                        + 3_000_000
+                        + 50_000_000
+                        :: Integer
+            inSum `shouldSatisfy` (>= outSum + fee)
+
+        it "all outputs satisfy minUTxO" $ do
+            tx <- runRealisticUpdate
+            for_ (toOutList tx) $ \o -> do
+                let c = o ^. coinTxOutL
+                    minC =
+                        getMinCoinTxOut
+                            realisticPP
+                            o
+                c `shouldSatisfy` (>= minC)
+
+        it "redeemer count = 1 + N requests" $ do
+            (tx, _, _) <- runRealisticUpdateWith
+            let (Redeemers rdmrs) =
+                    tx ^. witsTxL . rdmrsTxWitsL
+            -- 1 Modify + 1 Contribute (1 request)
+            Map.size rdmrs `shouldBe` 2
+
+        it "state output has updated root" $ do
+            (tx, _, _) <- runRealisticUpdateWith
+            case toOutList tx of
+                (stateOut : _) ->
+                    case extractCageDatum stateOut of
+                        Just (StateDatum s) ->
+                            let OnChainRoot r =
+                                    stateRoot s
+                            in  r
+                                    `shouldSatisfy` ( /=
+                                                        BS.replicate
+                                                            32
+                                                            0
+                                                    )
+                        _ ->
+                            expectationFailure
+                                "not a StateDatum"
+                [] -> expectationFailure "no outputs"
+
+        it "refund amounts correct" $ do
+            (tx, _, _) <- runRealisticUpdateWith
+            let outs = toOutList tx
+            -- state output first, then refund(s)
+            case drop 1 outs of
+                (refund : _) -> do
+                    let Coin c =
+                            refund ^. coinTxOutL
+                    -- request had 3M, maxFee=1M
+                    c `shouldBe` 2_000_000
+                _ ->
+                    expectationFailure "no refund output"
+
+        it "exactly 1 script witness" $ do
+            tx <- runRealisticUpdate
+            let scripts =
+                    tx ^. witsTxL . scriptTxWitsL
+            Map.size scripts `shouldBe` 1
+
+        it "required signer = owner" $ do
+            (tx, _, _) <- runRealisticUpdateWith
+            let signers =
+                    tx
+                        ^. bodyTxL
+                            . reqSignerHashesTxBodyL
+            Set.size signers `shouldBe` 1
+
+        it "validity upper bound set" $ do
+            (tx, _, _) <- runRealisticUpdateWith
+            let ValidityInterval _ hi =
+                    tx ^. bodyTxL . vldtTxBodyL
+            hi `shouldSatisfy` isSJust
+
+        it "collateral = fee input" $ do
+            (tx, _, _) <- runRealisticUpdateWith
+            let collat =
+                    tx
+                        ^. bodyTxL
+                            . collateralInputsTxBodyL
+            Set.size collat `shouldBe` 1
+
+-- ---------------------------------------------------------
+-- Group E: Retract tx properties (IO, realistic PParams)
+-- ---------------------------------------------------------
+
+retractTxProps :: Spec
+retractTxProps =
+    describe "retract tx (realistic PParams)" $ do
+        it "value preservation" $ do
+            (tx, _, _) <-
+                runRealisticRetractWith
+            let body = tx ^. bodyTxL
+                Coin fee = body ^. feeTxBodyL
+                outSum =
+                    sum
+                        $ map
+                            (\o -> let Coin c = o ^. coinTxOutL in c)
+                        $ toOutList tx
+                -- request(3M) + fee(50M)
+                inSum =
+                    3_000_000 + 50_000_000 :: Integer
+            inSum `shouldSatisfy` (>= outSum + fee)
+
+        it "all outputs satisfy minUTxO" $ do
+            (tx, _, _) <- runRealisticRetractWith
+            for_ (toOutList tx) $ \o -> do
+                let c = o ^. coinTxOutL
+                    minC =
+                        getMinCoinTxOut
+                            realisticPP
+                            o
+                c `shouldSatisfy` (>= minC)
+
+        it "state is reference input" $ do
+            (tx, _, stateIn) <-
+                runRealisticRetractWith
+            let refs =
+                    tx
+                        ^. bodyTxL
+                            . referenceInputsTxBodyL
+            Set.member stateIn refs `shouldBe` True
+
+        it "state not consumed" $ do
+            (tx, _, stateIn) <-
+                runRealisticRetractWith
+            let ins =
+                    tx ^. bodyTxL . inputsTxBodyL
+            Set.member stateIn ins `shouldBe` False
+
+        it "request consumed" $ do
+            (tx, reqIn, _) <-
+                runRealisticRetractWith
+            let ins =
+                    tx ^. bodyTxL . inputsTxBodyL
+            Set.member reqIn ins `shouldBe` True
+
+        it "exactly 1 redeemer" $ do
+            (tx, _, _) <- runRealisticRetractWith
+            let (Redeemers rdmrs) =
+                    tx ^. witsTxL . rdmrsTxWitsL
+            Map.size rdmrs `shouldBe` 1
+
+        it "required signer = requester" $ do
+            (tx, _, _) <- runRealisticRetractWith
+            let signers =
+                    tx
+                        ^. bodyTxL
+                            . reqSignerHashesTxBodyL
+            Set.size signers `shouldBe` 1
+
+        it "validity interval = phase 2" $ do
+            (tx, _, _) <- runRealisticRetractWith
+            let ValidityInterval lo hi =
+                    tx ^. bodyTxL . vldtTxBodyL
+            lo `shouldSatisfy` isSJust
+            hi `shouldSatisfy` isSJust
+
+-- ---------------------------------------------------------
+-- Group F: End tx properties (IO, realistic PParams)
+-- ---------------------------------------------------------
+
+endTxProps :: Spec
+endTxProps =
+    describe "end tx (realistic PParams)" $ do
+        it "value preservation" $ do
+            (tx, _) <- runRealisticEndWith
+            let body = tx ^. bodyTxL
+                Coin fee = body ^. feeTxBodyL
+                outSum =
+                    sum
+                        $ map
+                            (\o -> let Coin c = o ^. coinTxOutL in c)
+                        $ toOutList tx
+                -- state(2M) + fee(50M) - burned value
+                inSum =
+                    2_000_000 + 50_000_000 :: Integer
+            inSum `shouldSatisfy` (>= outSum + fee)
+
+        it "all outputs satisfy minUTxO" $ do
+            tx <- runRealisticEnd
+            for_ (toOutList tx) $ \o -> do
+                let c = o ^. coinTxOutL
+                    minC =
+                        getMinCoinTxOut
+                            realisticPP
+                            o
+                c `shouldSatisfy` (>= minC)
+
+        it "burns exactly 1 token" $ do
+            tx <- runRealisticEnd
+            let MultiAsset ma =
+                    tx ^. bodyTxL . mintTxBodyL
+                mPolicy =
+                    Map.lookup cagePolicyId ma
+            mPolicy `shouldSatisfy` isJust
+            let assets = fromJust mPolicy
+            Map.size assets `shouldBe` 1
+            case Map.elems assets of
+                [qty] -> qty `shouldBe` (-1)
+                _ ->
+                    expectationFailure "expected 1 asset"
+
+        it "exactly 2 redeemers" $ do
+            tx <- runRealisticEnd
+            let (Redeemers rdmrs) =
+                    tx ^. witsTxL . rdmrsTxWitsL
+            -- 1 spending (End) + 1 minting (Burning)
+            Map.size rdmrs `shouldBe` 2
+
+        it "required signer = owner" $ do
+            (tx, _) <- runRealisticEndWith
+            let signers =
+                    tx
+                        ^. bodyTxL
+                            . reqSignerHashesTxBodyL
+            Set.size signers `shouldBe` 1
+
+        it "exactly 1 script witness" $ do
+            tx <- runRealisticEnd
+            let scripts =
+                    tx ^. witsTxL . scriptTxWitsL
+            Map.size scripts `shouldBe` 1
+
+-- ---------------------------------------------------------
+-- Group G: Boot tx properties (IO, needs MPFS_BLUEPRINT)
+-- ---------------------------------------------------------
+
+bootTxProps :: Spec
+bootTxProps =
+    describe "boot tx (realistic PParams)" $ do
+        mPath <-
+            runIO $ lookupEnv "MPFS_BLUEPRINT"
+        case mPath of
+            Nothing ->
+                it
+                    "skipped (MPFS_BLUEPRINT not set)"
+                    (pure () :: IO ())
+            Just path -> do
+                ebp <- runIO $ loadBlueprint path
+                case ebp of
+                    Left err ->
+                        it
+                            ( "blueprint failed: "
+                                <> err
+                            )
+                            ( error
+                                "blueprint parse failed"
+                                :: IO ()
+                            )
+                    Right bp ->
+                        for_
+                            ( extractCompiledCode
+                                "cage."
+                                bp
+                            )
+                            bootTxPropsWithScript
+
+bootTxPropsWithScript
+    :: SBS.ShortByteString -> Spec
+bootTxPropsWithScript scriptBytes = do
+    let cfg =
+            CageConfig
+                { cageScriptBytes = scriptBytes
+                , cfgScriptHash =
+                    computeScriptHash scriptBytes
+                , defaultProcessTime = 300_000
+                , defaultRetractTime = 600_000
+                , defaultMaxFee = Coin 1_000_000
+                , network = Testnet
+                , systemStartPosixMs = 0
+                , slotLengthMs = 100
+                }
+
+    it "all outputs satisfy minUTxO" $ do
+        tx <-
+            runRealisticBootToken cfg
+        for_ (toOutList tx) $ \o -> do
+            let c = o ^. coinTxOutL
+                minC =
+                    getMinCoinTxOut
+                        realisticPP
+                        o
+            c `shouldSatisfy` (>= minC)
+
+    it "mints exactly 1 token" $ do
+        tx <-
+            runRealisticBootToken cfg
+        let MultiAsset ma =
+                tx ^. bodyTxL . mintTxBodyL
+            mPolicy =
+                Map.lookup
+                    ( PolicyID
+                        $ cfgScriptHash cfg
+                    )
+                    ma
+        mPolicy `shouldSatisfy` isJust
+        let assets = fromJust mPolicy
+        Map.size assets `shouldBe` 1
+        case Map.elems assets of
+            [qty] -> qty `shouldBe` 1
+            _ ->
+                expectationFailure "expected 1 asset"
+
+    it "cage output has state datum" $ do
+        tx <-
+            runRealisticBootToken cfg
+        case toOutList tx of
+            (cageOut : _) ->
+                case extractCageDatum cageOut of
+                    Just (StateDatum _) -> pure ()
+                    _ ->
+                        expectationFailure
+                            "not a StateDatum"
+            [] -> expectationFailure "no outputs"
+
+    it "state datum owner matches" $ do
+        tx <-
+            runRealisticBootToken cfg
+        case toOutList tx of
+            (cageOut : _) ->
+                case extractCageDatum cageOut of
+                    Just (StateDatum s) ->
+                        let BuiltinByteString bs =
+                                stateOwner s
+                            KeyHash h = testKh
+                        in  bs
+                                `shouldBe` hashToBytes
+                                    h
+                    _ ->
+                        expectationFailure
+                            "not a StateDatum"
+            [] -> expectationFailure "no outputs"
+
+    it "exactly 1 minting redeemer" $ do
+        tx <-
+            runRealisticBootToken cfg
+        let (Redeemers rdmrs) =
+                tx ^. witsTxL . rdmrsTxWitsL
+        Map.size rdmrs `shouldBe` 1
+
+    it "exactly 1 script witness" $ do
+        tx <-
+            runRealisticBootToken cfg
+        let scripts =
+                tx ^. witsTxL . scriptTxWitsL
+        Map.size scripts `shouldBe` 1
+
+-- ---------------------------------------------------------
+-- Helpers
+-- ---------------------------------------------------------
 
 -- ---------------------------------------------------------
 -- Runners
@@ -890,3 +1714,254 @@ mkTestFixture = do
                 st
                 dummyTrieManager
     pure (st, prov, builder, txIn)
+
+-- ---------------------------------------------------------
+-- Realistic runners
+-- ---------------------------------------------------------
+
+-- | Check StrictMaybe is SJust.
+isSJust :: StrictMaybe a -> Bool
+isSJust (SJust _) = True
+isSJust _ = False
+
+-- | Realistic fixture with realisticPP.
+mkRealisticFixture
+    :: IO (State IO, Provider IO, TxBuilder IO, TxIn)
+mkRealisticFixture = do
+    st <- mkMockState
+    let ts =
+            TokenState
+                { owner = testKh
+                , root = Root (BS.replicate 32 0)
+                , maxFee = Coin 1_000_000
+                , processTime = 300_000
+                , retractTime = 600_000
+                }
+    putToken (tokens st) testTid ts
+    txIn <- generate genTxIn
+    let feeAddr = testAddr testKh
+        utxo =
+            mkBasicTxOut
+                feeAddr
+                (inject (Coin 50_000_000))
+        prov =
+            mkRealisticProvider [(txIn, utxo)]
+        builder =
+            mkRealTxBuilder
+                testCageConfig
+                prov
+                st
+                dummyTrieManager
+    pure (st, prov, builder, txIn)
+
+-- | Run requestInsert with realistic PParams.
+runRealisticRequestInsert
+    :: IO (Tx ConwayEra)
+runRealisticRequestInsert =
+    fst <$> runRealisticRequestInsertWith
+
+-- | Run requestInsert with realistic PParams,
+-- returning the fee TxIn.
+runRealisticRequestInsertWith
+    :: IO (Tx ConwayEra, TxIn)
+runRealisticRequestInsertWith = do
+    (_st, _prov, builder, txIn) <-
+        mkRealisticFixture
+    let feeAddr = testAddr testKh
+    tx <-
+        requestInsert
+            builder
+            testTid
+            "mykey"
+            "myvalue"
+            feeAddr
+    pure (tx, txIn)
+
+-- | Run updateToken with realistic PParams.
+runRealisticUpdate :: IO (Tx ConwayEra)
+runRealisticUpdate = do
+    (tx, _, _) <- runRealisticUpdateWith
+    pure tx
+
+-- | Run updateToken with realistic PParams
+-- and return details.
+runRealisticUpdateWith
+    :: IO (Tx ConwayEra, TxIn, TxIn)
+runRealisticUpdateWith = do
+    st <- mkMockState
+    let ts =
+            TokenState
+                { owner = testKh
+                , root = Root (BS.replicate 32 0)
+                , maxFee = Coin 1_000_000
+                , processTime = 300_000
+                , retractTime = 600_000
+                }
+    putToken (tokens st) testTid ts
+    stateIn <- generate genTxIn
+    reqIn <- generate genTxIn
+    feeIn <- generate genTxIn
+    let scriptAddr = cageAddr Testnet
+        feeAddr = testAddr testKh
+        cageUtxos =
+            [ (stateIn, mkStateTxOut)
+            , (reqIn, mkRequestTxOut)
+            ]
+        walletUtxos =
+            [
+                ( feeIn
+                , mkBasicTxOut
+                    feeAddr
+                    (inject (Coin 50_000_000))
+                )
+            ]
+        prov =
+            mkRealisticRoutingProvider
+                [ (scriptAddr, cageUtxos)
+                , (feeAddr, walletUtxos)
+                ]
+    trieManager <- mkPureTrieManager
+    createTrie trieManager testTid
+    withTrie trieManager testTid $ \trie -> do
+        _ <- insert trie "mykey" "existing"
+        pure ()
+    let builder =
+            mkRealTxBuilder
+                testCageConfig
+                prov
+                st
+                trieManager
+    tx <-
+        updateToken builder testTid feeAddr
+    pure (tx, stateIn, reqIn)
+
+-- | Run retractRequest with realistic PParams
+-- and return details.
+runRealisticRetractWith
+    :: IO (Tx ConwayEra, TxIn, TxIn)
+runRealisticRetractWith = do
+    st <- mkMockState
+    let ts =
+            TokenState
+                { owner = testKh
+                , root = Root (BS.replicate 32 0)
+                , maxFee = Coin 1_000_000
+                , processTime = 300_000
+                , retractTime = 600_000
+                }
+    putToken (tokens st) testTid ts
+    reqIn <- generate genTxIn
+    stateIn <- generate genTxIn
+    feeIn <- generate genTxIn
+    let req =
+            Request
+                { requestToken = testTid
+                , requestOwner = testKh
+                , requestKey = "mykey"
+                , requestValue = Insert "myvalue"
+                , requestFee = Coin 1_000_000
+                , requestSubmittedAt = 0
+                }
+    putRequest (requests st) reqIn req
+    let scriptAddr = cageAddr Testnet
+        feeAddr = testAddr testKh
+        cageUtxos =
+            [ (reqIn, mkRequestTxOut)
+            , (stateIn, mkStateTxOut)
+            ]
+        walletUtxos =
+            [
+                ( feeIn
+                , mkBasicTxOut
+                    feeAddr
+                    (inject (Coin 50_000_000))
+                )
+            ]
+        prov =
+            mkRealisticRoutingProvider
+                [ (scriptAddr, cageUtxos)
+                , (feeAddr, walletUtxos)
+                ]
+        builder =
+            mkRealTxBuilder
+                testCageConfig
+                prov
+                st
+                dummyTrieManager
+    tx <-
+        retractRequest builder reqIn feeAddr
+    pure (tx, reqIn, stateIn)
+
+-- | Run endToken with realistic PParams.
+runRealisticEnd :: IO (Tx ConwayEra)
+runRealisticEnd = fst <$> runRealisticEndWith
+
+-- | Run endToken with realistic PParams
+-- and return details.
+runRealisticEndWith
+    :: IO (Tx ConwayEra, TxIn)
+runRealisticEndWith = do
+    st <- mkMockState
+    let ts =
+            TokenState
+                { owner = testKh
+                , root = Root (BS.replicate 32 0)
+                , maxFee = Coin 1_000_000
+                , processTime = 300_000
+                , retractTime = 600_000
+                }
+    putToken (tokens st) testTid ts
+    stateIn <- generate genTxIn
+    feeIn <- generate genTxIn
+    let scriptAddr = cageAddr Testnet
+        feeAddr = testAddr testKh
+        cageUtxos =
+            [(stateIn, mkStateTxOut)]
+        walletUtxos =
+            [
+                ( feeIn
+                , mkBasicTxOut
+                    feeAddr
+                    (inject (Coin 50_000_000))
+                )
+            ]
+        prov =
+            mkRealisticRoutingProvider
+                [ (scriptAddr, cageUtxos)
+                , (feeAddr, walletUtxos)
+                ]
+        builder =
+            mkRealTxBuilder
+                testCageConfig
+                prov
+                st
+                dummyTrieManager
+    tx <- endToken builder testTid feeAddr
+    pure (tx, stateIn)
+
+-- | Run bootToken with realistic PParams.
+runRealisticBootToken
+    :: CageConfig -> IO (Tx ConwayEra)
+runRealisticBootToken cfg = do
+    txIn1 <- generate genTxIn
+    txIn2 <- generate genTxIn
+    let feeAddr = testAddr testKh
+        utxo1 =
+            mkBasicTxOut
+                feeAddr
+                (inject (Coin 50_000_000))
+        utxo2 =
+            mkBasicTxOut
+                feeAddr
+                (inject (Coin 50_000_000))
+        prov =
+            mkRealisticProvider
+                [(txIn1, utxo1), (txIn2, utxo2)]
+    st <- mkMockState
+    let builder =
+            mkRealTxBuilder
+                cfg
+                prov
+                st
+                dummyTrieManager
+    bootToken builder feeAddr
