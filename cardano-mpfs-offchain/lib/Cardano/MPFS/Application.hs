@@ -185,12 +185,10 @@ dbConfig =
         }
 
 -- | All column families: 4 UTxO (cardano-utxo-csmt)
--- followed by 6 cage\/trie. Order matters —
+-- followed by 7 cage\/trie. Order matters —
 -- cardano-utxo-csmt consumes the first 4 via its
 -- internal 'Columns' GADT, and our 'AllColumns'
--- GADT consumes the remaining 6.
--- | All column families: 4 UTxO (cardano-utxo-csmt)
--- followed by 6 cage\/trie.
+-- GADT consumes the remaining 7.
 allColumnFamilies :: [(String, Config)]
 allColumnFamilies =
     utxoColumnFamilies <> cageColumnFamilies
@@ -202,7 +200,7 @@ allColumnFamilies =
         , ("config", dbConfig)
         ]
 
--- | Cage-only column families (6). Used by tests
+-- | Cage-only column families (7). Used by tests
 -- that don't need the UTxO index.
 cageColumnFamilies :: [(String, Config)]
 cageColumnFamilies =
@@ -212,11 +210,12 @@ cageColumnFamilies =
     , ("cage-rollbacks", dbConfig)
     , ("trie-nodes", dbConfig)
     , ("trie-kv", dbConfig)
+    , ("trie-meta", dbConfig)
     ]
 
 -- | Run an action with a fully wired 'Context IO'.
 --
--- Opens RocksDB with 10 column families, creates
+-- Opens RocksDB with 11 column families, creates
 -- the UTxO state machine and cage state, starts
 -- two N2C connections (ChainSync + LSQ\/LTxS),
 -- and tears down on exit.
@@ -253,14 +252,15 @@ withApplication cfg action =
                     CSMT.RunTransaction
                         (run . mapColumns InUtxo)
 
-            -- Trie: columns 9–10 (skip 8)
+            -- Trie: columns 9–11 (skip 8)
             case drop 8 (columnFamilies db) of
-                (nodesCF : kvCF : _) -> do
+                (nodesCF : kvCF : metaCF : _) -> do
                     tm <-
                         mkPersistentTrieManager
                             db
                             nodesCF
                             kvCF
+                            metaCF
 
                     -- UTxO state machine
                     (utxoUpdate, availPts) <-
@@ -377,7 +377,7 @@ withApplication cfg action =
                     pure result
                 _ ->
                     error
-                        "Expected at least 10 \
+                        "Expected at least 11 \
                         \column families"
 
 -- | Seed a fresh database from a bootstrap CBOR

@@ -12,11 +12,12 @@
 -- @rocksdb-kv-transactions@. Each 'AllColumns'
 -- constructor selects a RocksDB column family with
 -- its key-value types enforced at the type level via
--- the 'KV' kind. Six column families cover:
+-- the 'KV' kind. Seven column families cover:
 --
 --   * Cage state: 'CageTokens', 'CageRequests', 'CageCfg'
 --   * Rollback storage: 'CageRollbacks'
 --   * Trie storage: 'TrieNodes', 'TrieKV'
+--   * Trie registry: 'TrieMeta'
 --
 -- Serialization codecs for these columns live in
 -- "Cardano.MPFS.Indexer.Codecs".
@@ -32,6 +33,9 @@ module Cardano.MPFS.Indexer.Columns
 
       -- * Rollback entry type
     , CageRollbackEntry (..)
+
+      -- * Trie registry status
+    , TrieStatus (..)
     ) where
 
 import Data.ByteString (ByteString)
@@ -57,6 +61,17 @@ import Cardano.MPFS.Core.Types
     , TxIn
     )
 import Cardano.MPFS.Indexer.Event (CageInverseOp)
+
+-- | Visibility status for a token's trie in the
+-- persistent registry. Stored in the @trie-meta@
+-- column family so trie state survives restarts.
+data TrieStatus
+    = -- | Trie is visible and accessible
+      Visible
+    | -- | Trie is hidden (burned token); data
+      -- preserved but 'withTrie' fails
+      Hidden
+    deriving stock (Eq, Show)
 
 -- | Chain sync checkpoint stored in the cage-cfg
 -- column family.
@@ -107,6 +122,12 @@ data AllColumns x where
     -- per-token tries. Keys are token-prefixed.
     TrieKV
         :: AllColumns (KV ByteString ByteString)
+    -- | Trie registry: maps token identifiers to
+    -- their visibility status ('Visible' or
+    -- 'Hidden'). Scanned at startup to rebuild
+    -- the in-memory known\/hidden sets.
+    TrieMeta
+        :: AllColumns (KV TokenId TrieStatus)
 
 instance GEq AllColumns where
     geq CageTokens CageTokens = Just Refl
@@ -115,6 +136,7 @@ instance GEq AllColumns where
     geq CageRollbacks CageRollbacks = Just Refl
     geq TrieNodes TrieNodes = Just Refl
     geq TrieKV TrieKV = Just Refl
+    geq TrieMeta TrieMeta = Just Refl
     geq _ _ = Nothing
 
 instance GCompare AllColumns where
@@ -131,20 +153,23 @@ instance GCompare AllColumns where
     gcompare CageRollbacks _ = GLT
     gcompare _ CageRollbacks = GGT
     gcompare TrieNodes TrieNodes = GEQ
-    gcompare TrieNodes TrieKV = GLT
-    gcompare TrieKV TrieNodes = GGT
+    gcompare TrieNodes _ = GLT
+    gcompare _ TrieNodes = GGT
     gcompare TrieKV TrieKV = GEQ
+    gcompare TrieKV _ = GLT
+    gcompare _ TrieKV = GGT
+    gcompare TrieMeta TrieMeta = GEQ
 
 -- | Unified column selector covering both UTxO
 -- (cardano-utxo-csmt) and cage\/trie columns.
 -- Enables a single RocksDB transaction runner for
--- all 10 column families via 'mapColumns'.
+-- all 11 column families via 'mapColumns'.
 data UnifiedColumns slot hash key value x where
     -- | UTxO columns (first 4)
     InUtxo
         :: Columns slot hash key value x
         -> UnifiedColumns slot hash key value x
-    -- | Cage\/trie columns (last 6)
+    -- | Cage\/trie columns (last 7)
     InCage
         :: AllColumns x
         -> UnifiedColumns slot hash key value x
