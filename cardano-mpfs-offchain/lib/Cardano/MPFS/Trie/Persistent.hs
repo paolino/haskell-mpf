@@ -47,6 +47,8 @@ import Data.IORef
 import Data.Set (Set)
 import Data.Set qualified as Set
 
+import Cardano.MPFS.Indexer.Columns (TrieStatus (..))
+
 import Database.KV.Database
     ( Codecs (..)
     , Column (..)
@@ -126,7 +128,9 @@ import Cardano.MPFS.Trie
 
 -- | Create a persistent 'TrieManager IO' backed by
 -- shared RocksDB column families. Each token's trie
--- data is isolated via key prefixing.
+-- data is isolated via key prefixing. On startup,
+-- scans the @metaCF@ to rebuild the known\/hidden
+-- sets so tries survive restarts.
 mkPersistentTrieManager
     :: DB
     -- ^ Shared RocksDB handle
@@ -134,10 +138,13 @@ mkPersistentTrieManager
     -- ^ Column family for trie nodes
     -> ColumnFamily
     -- ^ Column family for trie key-value pairs
+    -> ColumnFamily
+    -- ^ Column family for trie registry metadata
     -> IO (TrieManager IO)
-mkPersistentTrieManager db nodesCF kvCF = do
-    knownRef <- newIORef (Set.empty :: Set TokenId)
-    hiddenRef <- newIORef (Set.empty :: Set TokenId)
+mkPersistentTrieManager db nodesCF kvCF metaCF = do
+    (known, hidden) <- scanTrieMeta db metaCF
+    knownRef <- newIORef known
+    hiddenRef <- newIORef hidden
     pure
         TrieManager
             { withTrie =
@@ -159,25 +166,33 @@ mkPersistentTrieManager db nodesCF kvCF = do
                     db
                     nodesCF
                     kvCF
+                    metaCF
                     knownRef
+                    hiddenRef
             , deleteTrie =
                 persistentDeleteTrie
                     db
                     nodesCF
                     kvCF
+                    metaCF
                     knownRef
-            , registerTrie =
-                persistentRegisterTrie knownRef
+                    hiddenRef
             , hideTrie =
-                persistentHideTrie hiddenRef
+                persistentHideTrie
+                    db
+                    metaCF
+                    hiddenRef
             , unhideTrie =
-                persistentUnhideTrie hiddenRef
+                persistentUnhideTrie
+                    db
+                    metaCF
+                    hiddenRef
             }
 
 -- | Bracket that opens a RocksDB database, creates
--- the @nodes@ and @kv@ column families, builds a
--- persistent 'TrieManager IO', runs the action, and
--- closes the database.
+-- the @nodes@, @kv@, and @meta@ column families,
+-- builds a persistent 'TrieManager IO', runs the
+-- action, and closes the database.
 withPersistentTrieManager
     :: FilePath
     -- ^ Path to the RocksDB database directory
@@ -190,20 +205,22 @@ withPersistentTrieManager path action =
         defaultConfig
         [ ("nodes", defaultConfig)
         , ("kv", defaultConfig)
+        , ("meta", defaultConfig)
         ]
         $ \db@DB{columnFamilies} ->
             case columnFamilies of
-                [nodesCF, kvCF] -> do
+                [nodesCF, kvCF, metaCF] -> do
                     mgr <-
                         mkPersistentTrieManager
                             db
                             nodesCF
                             kvCF
+                            metaCF
                     action mgr
                 _ ->
                     error
                         "withPersistentTrieManager: \
-                        \expected 2 column families"
+                        \expected 3 column families"
 
 -- | Default RocksDB configuration.
 defaultConfig :: Config
@@ -320,55 +337,109 @@ persistentWithSpeculativeTrie
 
 -- | Create a new empty trie for a token. Previous
 -- data is deleted if the token already exists.
+-- The registry entry is written atomically with
+-- the prefix deletes.
 persistentCreateTrie
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
+    -> IORef (Set TokenId)
     -> IORef (Set TokenId)
     -> TokenId
     -> IO ()
-persistentCreateTrie db nodesCF kvCF knownRef tid = do
-    -- Always delete: the DB may contain stale data
-    -- from a previous TrieManager (different knownRef)
-    -- or from a previous run.
-    deleteAllWithPrefix db nodesCF kvCF pfx
-    modifyIORef' knownRef (Set.insert tid)
-  where
-    pfx = tokenPrefix tid
+persistentCreateTrie
+    db
+    nodesCF
+    kvCF
+    metaCF
+    knownRef
+    hiddenRef
+    tid = do
+        -- Always delete: the DB may contain stale data
+        -- from a previous TrieManager (different
+        -- knownRef) or from a previous run.
+        ops1 <- collectDeleteOps db nodesCF pfx
+        ops2 <- collectDeleteOps db kvCF pfx
+        let metaOp =
+                PutCF
+                    metaCF
+                    (tokenIdToKey tid)
+                    (encodeTrieStatus Visible)
+        write db (metaOp : ops1 ++ ops2)
+        modifyIORef' knownRef (Set.insert tid)
+        modifyIORef' hiddenRef (Set.delete tid)
+      where
+        pfx = tokenPrefix tid
 
 -- | Delete a token's trie and all its data.
+-- The registry entry is removed atomically with
+-- the prefix deletes.
 persistentDeleteTrie
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
+    -> IORef (Set TokenId)
     -> IORef (Set TokenId)
     -> TokenId
     -> IO ()
-persistentDeleteTrie db nodesCF kvCF knownRef tid = do
-    deleteAllWithPrefix db nodesCF kvCF (tokenPrefix tid)
-    modifyIORef' knownRef (Set.delete tid)
+persistentDeleteTrie
+    db
+    nodesCF
+    kvCF
+    metaCF
+    knownRef
+    hiddenRef
+    tid = do
+        ops1 <- collectDeleteOps db nodesCF pfx
+        ops2 <- collectDeleteOps db kvCF pfx
+        let metaOp =
+                DelCF metaCF (tokenIdToKey tid)
+        write db (metaOp : ops1 ++ ops2)
+        modifyIORef' knownRef (Set.delete tid)
+        modifyIORef' hiddenRef (Set.delete tid)
+      where
+        pfx = tokenPrefix tid
 
 -- | Mark a token's trie as hidden. Data is preserved
--- in RocksDB; 'withTrie' will fail until 'unhideTrie'.
+-- in RocksDB; 'withTrie' will fail until
+-- 'unhideTrie'. The status change is persisted so
+-- it survives restarts.
 persistentHideTrie
-    :: IORef (Set TokenId) -> TokenId -> IO ()
-persistentHideTrie hiddenRef tid =
+    :: DB
+    -> ColumnFamily
+    -> IORef (Set TokenId)
+    -> TokenId
+    -> IO ()
+persistentHideTrie db metaCF hiddenRef tid = do
+    write
+        db
+        [ PutCF
+            metaCF
+            (tokenIdToKey tid)
+            (encodeTrieStatus Hidden)
+        ]
     modifyIORef' hiddenRef (Set.insert tid)
 
--- | Restore a hidden token's trie to visible.
+-- | Restore a hidden token's trie to visible. The
+-- status change is persisted so it survives
+-- restarts.
 persistentUnhideTrie
-    :: IORef (Set TokenId) -> TokenId -> IO ()
-persistentUnhideTrie hiddenRef tid =
+    :: DB
+    -> ColumnFamily
+    -> IORef (Set TokenId)
+    -> TokenId
+    -> IO ()
+persistentUnhideTrie db metaCF hiddenRef tid = do
+    write
+        db
+        [ PutCF
+            metaCF
+            (tokenIdToKey tid)
+            (encodeTrieStatus Visible)
+        ]
     modifyIORef' hiddenRef (Set.delete tid)
-
--- | Register an existing token so 'withTrie' works.
--- Does not delete any data — use for adopting tries
--- that already exist in the database (e.g. after
--- reopening).
-persistentRegisterTrie
-    :: IORef (Set TokenId) -> TokenId -> IO ()
-persistentRegisterTrie knownRef tid =
-    modifyIORef' knownRef (Set.insert tid)
 
 -- --------------------------------------------------------
 -- Prefixed Database construction
@@ -773,21 +844,76 @@ persistentGetProofSteps database k =
 hashBS :: ByteString -> ByteString
 hashBS = renderMPFHash . mkMPFHash
 
--- | Delete all entries with a given prefix from both
--- column families.
-deleteAllWithPrefix
+-- | Serialize a 'TokenId' to its raw asset name
+-- bytes (same encoding as 'tokenIdPrism').
+tokenIdToKey :: TokenId -> ByteString
+tokenIdToKey (TokenId (AssetName sbs)) =
+    SBS.fromShort sbs
+
+-- | Decode raw asset name bytes back to 'TokenId'.
+tokenIdFromKey :: ByteString -> TokenId
+tokenIdFromKey =
+    TokenId . AssetName . SBS.toShort
+
+-- | Encode 'TrieStatus' as a single byte.
+encodeTrieStatus :: TrieStatus -> ByteString
+encodeTrieStatus Visible = BS.singleton 0x01
+encodeTrieStatus Hidden = BS.singleton 0x02
+
+-- | Decode a single byte to 'TrieStatus'.
+decodeTrieStatus :: ByteString -> Maybe TrieStatus
+decodeTrieStatus bs = case BS.uncons bs of
+    Just (0x01, rest)
+        | BS.null rest -> Just Visible
+    Just (0x02, rest)
+        | BS.null rest -> Just Hidden
+    _ -> Nothing
+
+-- | Scan the trie-meta column family and return
+-- the sets of known (visible) and hidden tokens.
+scanTrieMeta
     :: DB
     -> ColumnFamily
-    -> ColumnFamily
-    -> ByteString
-    -> IO ()
-deleteAllWithPrefix db nodesCF kvCF pfx = do
-    ops1 <- collectDeleteOps db nodesCF pfx
-    ops2 <- collectDeleteOps db kvCF pfx
-    let allOps = ops1 ++ ops2
-    if null allOps
-        then pure ()
-        else write db allOps
+    -> IO (Set TokenId, Set TokenId)
+scanTrieMeta db metaCF = do
+    i <- createIterator db (Just metaCF)
+    iterSeek i BS.empty
+    result <- go i Set.empty Set.empty
+    destroyIterator i
+    pure result
+  where
+    go i known hidden = do
+        v <- iterValid i
+        if v
+            then do
+                me <- iterEntry i
+                case me of
+                    Just (k, val) ->
+                        case decodeTrieStatus val of
+                            Just Visible -> do
+                                iterNext i
+                                go
+                                    i
+                                    ( Set.insert
+                                        (tokenIdFromKey k)
+                                        known
+                                    )
+                                    hidden
+                            Just Hidden -> do
+                                iterNext i
+                                go
+                                    i
+                                    known
+                                    ( Set.insert
+                                        (tokenIdFromKey k)
+                                        hidden
+                                    )
+                            Nothing -> do
+                                iterNext i
+                                go i known hidden
+                    Nothing ->
+                        pure (known, hidden)
+            else pure (known, hidden)
 
 -- | Collect delete operations for all entries with
 -- a given prefix in a column family.

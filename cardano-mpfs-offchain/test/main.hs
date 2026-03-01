@@ -32,7 +32,7 @@ import Cardano.MPFS.TxBuilderSpec qualified as TxBuilderSpec
 main :: IO ()
 main =
     PersistentSpec.withTestDB
-        $ \db nodesCF kvCF -> do
+        $ \db nodesCF kvCF metaCF -> do
             counterRef <- newIORef (0 :: Int)
             hspec $ do
                 BootstrapSpec.spec
@@ -47,6 +47,7 @@ main =
                     db
                     nodesCF
                     kvCF
+                    metaCF
                     counterRef
                 StateSpec.spec
                     mkMockTokens

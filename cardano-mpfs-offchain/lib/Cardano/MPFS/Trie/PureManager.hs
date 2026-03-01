@@ -58,7 +58,6 @@ mkPureTrieManager = do
                 pureWithSpeculativeTrie ref hiddenRef
             , createTrie = pureCreateTrie ref
             , deleteTrie = pureDeleteTrie ref
-            , registerTrie = \_ -> pure ()
             , hideTrie = pureHideTrie hiddenRef
             , unhideTrie = pureUnhideTrie hiddenRef
             }

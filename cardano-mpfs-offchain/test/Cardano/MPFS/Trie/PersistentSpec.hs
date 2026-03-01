@@ -107,12 +107,21 @@ testConfig =
 
 -- | Column family definitions for tests.
 testCFs :: [(String, Config)]
-testCFs = [("nodes", testConfig), ("kv", testConfig)]
+testCFs =
+    [ ("nodes", testConfig)
+    , ("kv", testConfig)
+    , ("meta", testConfig)
+    ]
 
 -- | Run an action with a temporary RocksDB that has
--- "nodes" and "kv" column families.
+-- "nodes", "kv", and "meta" column families.
 withTestDB
-    :: (DB -> ColumnFamily -> ColumnFamily -> IO a)
+    :: ( DB
+         -> ColumnFamily
+         -> ColumnFamily
+         -> ColumnFamily
+         -> IO a
+       )
     -> IO a
 withTestDB action =
     withSystemTempDirectory "mpfs-test" $ \dir ->
@@ -126,6 +135,7 @@ withTestDBAt
     -> ( DB
          -> ColumnFamily
          -> ColumnFamily
+         -> ColumnFamily
          -> IO a
        )
     -> IO a
@@ -133,11 +143,11 @@ withTestDBAt dir action =
     withDBCF dir testConfig testCFs
         $ \db@DB{columnFamilies = cfs} ->
             case cfs of
-                [nodesCF, kvCF] ->
-                    action db nodesCF kvCF
+                [nodesCF, kvCF, metaCF] ->
+                    action db nodesCF kvCF metaCF
                 _ ->
                     error
-                        "Expected 2 column \
+                        "Expected 3 column \
                         \families"
 
 -- ---------------------------------------------------------
@@ -208,6 +218,38 @@ reopenTidB =
 -- Fresh persistent trie construction
 -- ---------------------------------------------------------
 
+-- | Create a persistent TrieManager with clean meta
+-- state for TrieManagerSpec test tokens. Deletes
+-- metaCF entries for the fixed token IDs used by
+-- TrieManagerSpec so each test starts fresh.
+freshTrieManager
+    :: DB
+    -> ColumnFamily
+    -> ColumnFamily
+    -> ColumnFamily
+    -> IO (TrieManager IO)
+freshTrieManager db nodesCF kvCF metaCF = do
+    mgr <-
+        mkPersistentTrieManager
+            db
+            nodesCF
+            kvCF
+            metaCF
+    -- Clean up TrieManagerSpec's fixed tokens
+    let tmTokenA =
+            TokenId
+                (AssetName (SBS.pack [1, 2, 3]))
+        tmTokenB =
+            TokenId
+                (AssetName (SBS.pack [4, 5, 6]))
+    deleteTrie mgr tmTokenA
+    deleteTrie mgr tmTokenB
+    mkPersistentTrieManager
+        db
+        nodesCF
+        kvCF
+        metaCF
+
 -- | Create a fresh persistent 'Trie IO' for a test.
 -- Uses the counter to generate a unique 'TokenId',
 -- ensuring isolation across test iterations.
@@ -215,13 +257,20 @@ newPersistentTrie
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
     -> IORef Int
     -> IO (Trie IO)
-newPersistentTrie db nodesCF kvCF counterRef = do
-    tm <- mkPersistentTrieManager db nodesCF kvCF
-    tid <- nextTokenId counterRef
-    createTrie tm tid
-    withTrie tm tid pure
+newPersistentTrie db nodesCF kvCF metaCF counterRef =
+    do
+        tm <-
+            mkPersistentTrieManager
+                db
+                nodesCF
+                kvCF
+                metaCF
+        tid <- nextTokenId counterRef
+        createTrie tm tid
+        withTrie tm tid pure
 
 -- ---------------------------------------------------------
 -- Top-level spec
@@ -232,35 +281,40 @@ spec
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
     -> IORef Int
     -> Spec
-spec db nodesCF kvCF counterRef = do
+spec db nodesCF kvCF metaCF counterRef = do
     describe "Persistent Trie"
         $ TrieSpec.spec
             ( newPersistentTrie
                 db
                 nodesCF
                 kvCF
+                metaCF
                 counterRef
             )
     describe "Persistent TrieManager"
         $ TrieManagerSpec.spec
-            ( mkPersistentTrieManager
+            ( freshTrieManager
                 db
                 nodesCF
                 kvCF
+                metaCF
             )
     describe "Persistent properties"
         $ propertySpec
             db
             nodesCF
             kvCF
+            metaCF
             counterRef
     describe "Persistence-specific"
         $ persistenceSpec
             db
             nodesCF
             kvCF
+            metaCF
             counterRef
 
 -- ---------------------------------------------------------
@@ -271,15 +325,17 @@ propertySpec
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
     -> IORef Int
     -> Spec
-propertySpec db nodesCF kvCF counterRef = do
+propertySpec db nodesCF kvCF metaCF counterRef = do
     it "same root as pure backend"
         $ property
         $ propPureEquivalentRoot
             db
             nodesCF
             kvCF
+            metaCF
             counterRef
 
     it "insertion order independence"
@@ -288,6 +344,7 @@ propertySpec db nodesCF kvCF counterRef = do
             db
             nodesCF
             kvCF
+            metaCF
             counterRef
 
     it "deleted key not verifiable"
@@ -296,6 +353,7 @@ propertySpec db nodesCF kvCF counterRef = do
             db
             nodesCF
             kvCF
+            metaCF
             counterRef
 
     it "deletion preserves siblings"
@@ -304,6 +362,7 @@ propertySpec db nodesCF kvCF counterRef = do
             db
             nodesCF
             kvCF
+            metaCF
             counterRef
 
     it "per-token isolation"
@@ -312,6 +371,7 @@ propertySpec db nodesCF kvCF counterRef = do
             db
             nodesCF
             kvCF
+            metaCF
             counterRef
 
     it "createTrie overwrites existing"
@@ -320,6 +380,7 @@ propertySpec db nodesCF kvCF counterRef = do
             db
             nodesCF
             kvCF
+            metaCF
             counterRef
 
     it "delete then re-insert restores root"
@@ -328,6 +389,7 @@ propertySpec db nodesCF kvCF counterRef = do
             db
             nodesCF
             kvCF
+            metaCF
             counterRef
 
 -- | Same operations produce same root on pure and
@@ -336,12 +398,14 @@ propPureEquivalentRoot
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
     -> IORef Int
     -> Property
 propPureEquivalentRoot
     db
     nodesCF
     kvCF
+    metaCF
     counterRef =
         forAll genUniqueKVs $ \kvs ->
             not (null kvs) ==>
@@ -361,6 +425,7 @@ propPureEquivalentRoot
                             db
                             nodesCF
                             kvCF
+                            metaCF
                             counterRef
                     forM_ kvs
                         $ uncurry (insert trie)
@@ -373,12 +438,14 @@ propInsertOrderPersistent
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
     -> IORef Int
     -> Property
 propInsertOrderPersistent
     db
     nodesCF
     kvCF
+    metaCF
     counterRef =
         forAll genUniqueKVs $ \kvs ->
             length kvs >= 2 ==>
@@ -389,6 +456,7 @@ propInsertOrderPersistent
                                 db
                                 nodesCF
                                 kvCF
+                                metaCF
                                 counterRef
                         forM_ kvs
                             $ uncurry (insert trie1)
@@ -399,6 +467,7 @@ propInsertOrderPersistent
                                 db
                                 nodesCF
                                 kvCF
+                                metaCF
                                 counterRef
                         forM_ shuffled
                             $ uncurry (insert trie2)
@@ -411,12 +480,14 @@ propDeleteRemovesPersistent
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
     -> IORef Int
     -> Property
 propDeleteRemovesPersistent
     db
     nodesCF
     kvCF
+    metaCF
     counterRef =
         forAll genUniqueKVs $ \bg ->
             not (null bg) ==>
@@ -437,6 +508,7 @@ propDeleteRemovesPersistent
                                             db
                                             nodesCF
                                             kvCF
+                                            metaCF
                                             counterRef
                                     forM_ bg
                                         $ uncurry
@@ -463,12 +535,14 @@ propDeletePreservesSiblingsPersistent
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
     -> IORef Int
     -> Property
 propDeletePreservesSiblingsPersistent
     db
     nodesCF
     kvCF
+    metaCF
     counterRef =
         forAll genUniqueKVs $ \bg ->
             not (null bg) ==>
@@ -516,6 +590,7 @@ propDeletePreservesSiblingsPersistent
                                                     db
                                                     nodesCF
                                                     kvCF
+                                                    metaCF
                                                     counterRef
                                             forM_ bg
                                                 $ uncurry
@@ -540,12 +615,14 @@ propTokenIsolation
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
     -> IORef Int
     -> Property
 propTokenIsolation
     db
     nodesCF
     kvCF
+    metaCF
     counterRef =
         forAll genUniqueKVs $ \kvs ->
             not (null kvs) ==>
@@ -555,6 +632,7 @@ propTokenIsolation
                             db
                             nodesCF
                             kvCF
+                            metaCF
                     tidA <- nextTokenId counterRef
                     tidB <- nextTokenId counterRef
                     createTrie tm tidA
@@ -572,12 +650,14 @@ propCreateOverwrites
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
     -> IORef Int
     -> Property
 propCreateOverwrites
     db
     nodesCF
     kvCF
+    metaCF
     counterRef =
         forAll genUniqueKVs $ \kvs ->
             not (null kvs) ==>
@@ -587,6 +667,7 @@ propCreateOverwrites
                             db
                             nodesCF
                             kvCF
+                            metaCF
                     tid <- nextTokenId counterRef
                     createTrie tm tid
                     withTrie tm tid $ \trie ->
@@ -603,12 +684,14 @@ propDeleteInsertRoundtrip
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
     -> IORef Int
     -> Property
 propDeleteInsertRoundtrip
     db
     nodesCF
     kvCF
+    metaCF
     counterRef =
         forAll genUniqueKVs $ \bg ->
             not (null bg) ==>
@@ -629,6 +712,7 @@ propDeleteInsertRoundtrip
                                             db
                                             nodesCF
                                             kvCF
+                                            metaCF
                                             counterRef
                                     forM_ bg
                                         $ uncurry
@@ -658,9 +742,10 @@ persistenceSpec
     :: DB
     -> ColumnFamily
     -> ColumnFamily
+    -> ColumnFamily
     -> IORef Int
     -> Spec
-persistenceSpec db nodesCF kvCF counterRef = do
+persistenceSpec db nodesCF kvCF metaCF counterRef = do
     it
         "data persists across DB reopen"
         persistsAcrossReopen
@@ -679,6 +764,7 @@ persistenceSpec db nodesCF kvCF counterRef = do
                 db
                 nodesCF
                 kvCF
+                metaCF
                 counterRef
         forM_ fruitsTestData
             $ uncurry (insert trie)
@@ -688,19 +774,20 @@ persistenceSpec db nodesCF kvCF counterRef = do
                 expectedFullTrieRoot
 
 -- | Insert data, close DB, reopen, verify data is
--- still present.
+-- still present (no registerTrie needed).
 persistsAcrossReopen :: IO ()
 persistsAcrossReopen =
     withSystemTempDirectory "reopen" $ \dir -> do
         -- Phase 1: insert data
         root1 <-
             withTestDBAt dir
-                $ \db nodesCF kvCF -> do
+                $ \db nodesCF kvCF metaCF -> do
                     mgr <-
                         mkPersistentTrieManager
                             db
                             nodesCF
                             kvCF
+                            metaCF
                     createTrie mgr reopenTidA
                     withTrie mgr reopenTidA
                         $ \trie -> do
@@ -711,17 +798,18 @@ persistsAcrossReopen =
                                     "world"
                             getRoot trie
         -- Phase 2: reopen and verify
-        withTestDBAt dir $ \db nodesCF kvCF -> do
-            mgr <-
-                mkPersistentTrieManager
-                    db
-                    nodesCF
-                    kvCF
-            -- Register token without deleting data
-            registerTrie mgr reopenTidA
-            withTrie mgr reopenTidA $ \trie -> do
-                root2 <- getRoot trie
-                root2 `shouldBe` root1
+        withTestDBAt dir
+            $ \db nodesCF kvCF metaCF -> do
+                mgr <-
+                    mkPersistentTrieManager
+                        db
+                        nodesCF
+                        kvCF
+                        metaCF
+                withTrie mgr reopenTidA $ \trie ->
+                    do
+                        root2 <- getRoot trie
+                        root2 `shouldBe` root1
 
 -- | Delete trie, close DB, reopen, verify data is
 -- gone.
@@ -731,12 +819,13 @@ deletedTrieStaysDeletedAfterReopen =
         do
             -- Phase 1: insert then delete
             withTestDBAt dir
-                $ \db nodesCF kvCF -> do
+                $ \db nodesCF kvCF metaCF -> do
                     mgr <-
                         mkPersistentTrieManager
                             db
                             nodesCF
                             kvCF
+                            metaCF
                     createTrie mgr reopenTidA
                     withTrie mgr reopenTidA
                         $ \trie ->
@@ -746,14 +835,15 @@ deletedTrieStaysDeletedAfterReopen =
                                     "hello"
                                     "world"
                     deleteTrie mgr reopenTidA
-            -- Phase 2: reopen and verify empty
-            withTestDBAt dir $ \db nodesCF kvCF ->
-                do
+            -- Phase 2: reopen and verify gone
+            withTestDBAt dir
+                $ \db nodesCF kvCF metaCF -> do
                     mgr <-
                         mkPersistentTrieManager
                             db
                             nodesCF
                             kvCF
+                            metaCF
                     createTrie mgr reopenTidA
                     withTrie mgr reopenTidA
                         $ \trie -> do
@@ -763,7 +853,7 @@ deletedTrieStaysDeletedAfterReopen =
                                 `shouldBe` B.empty
 
 -- | Two tokens with data, close + reopen, both
--- intact.
+-- intact (no registerTrie needed).
 multipleToksSurviveReopen :: IO ()
 multipleToksSurviveReopen =
     withSystemTempDirectory "reopen-multi"
@@ -771,12 +861,13 @@ multipleToksSurviveReopen =
             -- Phase 1: insert into both tokens
             (rootA1, rootB1) <-
                 withTestDBAt dir
-                    $ \db nodesCF kvCF -> do
+                    $ \db nodesCF kvCF metaCF -> do
                         mgr <-
                             mkPersistentTrieManager
                                 db
                                 nodesCF
                                 kvCF
+                                metaCF
                         createTrie mgr reopenTidA
                         createTrie mgr reopenTidB
                         rA <-
@@ -804,14 +895,13 @@ multipleToksSurviveReopen =
                         pure (rA, rB)
             -- Phase 2: reopen and verify both
             withTestDBAt dir
-                $ \db nodesCF kvCF -> do
+                $ \db nodesCF kvCF metaCF -> do
                     mgr <-
                         mkPersistentTrieManager
                             db
                             nodesCF
                             kvCF
-                    registerTrie mgr reopenTidA
-                    registerTrie mgr reopenTidB
+                            metaCF
                     withTrie mgr reopenTidA
                         $ \trie -> do
                             rootA2 <- getRoot trie
