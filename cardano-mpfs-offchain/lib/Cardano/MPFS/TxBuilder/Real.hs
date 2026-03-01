@@ -19,10 +19,15 @@ module Cardano.MPFS.TxBuilder.Real
       -- * Script hash
     , computeScriptHash
 
+      -- * Request locked ADA
+    , requestLockedAda
+
       -- * Internals (for testing)
     , mkInlineDatum
+    , mkRequestDatum
     , toPlcData
     , extractCageDatum
+    , spendingIndex
     ) where
 
 import Cardano.MPFS.Provider (Provider (..))
@@ -42,11 +47,14 @@ import Cardano.MPFS.TxBuilder.Real.Internal
     ( computeScriptHash
     , extractCageDatum
     , mkInlineDatum
+    , mkRequestDatum
+    , spendingIndex
     , toPlcData
     )
 import Cardano.MPFS.TxBuilder.Real.Request
     ( requestDeleteImpl
     , requestInsertImpl
+    , requestLockedAda
     )
 import Cardano.MPFS.TxBuilder.Real.Retract
     ( retractRequestImpl

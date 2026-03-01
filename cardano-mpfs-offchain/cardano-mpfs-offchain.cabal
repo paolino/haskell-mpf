@@ -137,7 +137,9 @@ test-suite unit-tests
     , base
     , bytestring
     , cardano-crypto-class
+    , cardano-ledger-allegra
     , cardano-ledger-api
+    , cardano-ledger-babbage
     , cardano-ledger-core
     , cardano-ledger-mary
     , cardano-mpfs-offchain

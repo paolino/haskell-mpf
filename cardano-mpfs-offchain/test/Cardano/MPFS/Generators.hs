@@ -17,6 +17,9 @@ module Cardano.MPFS.Generators
     , genBlockId
     , genCageEvent
     , genCageInverseOp
+    , genMaxFee
+    , genTrieKey
+    , genTrieValue
     ) where
 
 import Data.ByteString qualified as BS
@@ -182,6 +185,23 @@ genCageEvent = do
         , CageRetract <$> genTxIn
         , pure (CageBurn tid)
         ]
+
+-- | Generate a maxFee in the range
+-- 500,000 .. 5,000,000 lovelace.
+genMaxFee :: Gen Coin
+genMaxFee = Coin <$> choose (500_000, 5_000_000)
+
+-- | Generate a trie key (1-64 bytes).
+genTrieKey :: Gen BS.ByteString
+genTrieKey = do
+    len <- choose (1, 64)
+    BS.pack <$> vectorOf len arbitrary
+
+-- | Generate a trie value (1-256 bytes).
+genTrieValue :: Gen BS.ByteString
+genTrieValue = do
+    len <- choose (1, 256)
+    BS.pack <$> vectorOf len arbitrary
 
 -- | Generate a random 'ByteString' (1-16 bytes).
 genBS :: Gen BS.ByteString
