@@ -46,6 +46,7 @@ import Cardano.Ledger.Api.Tx.Out
     ( TxOut
     , coinTxOutL
     , datumTxOutL
+    , getMinCoinTxOut
     , mkBasicTxOut
     , valueTxOutL
     )
@@ -178,9 +179,15 @@ updateTokenImpl cfg prov _st tm tid addr = do
                     addrFromKeyHashBytes
                         (network cfg)
                         (extractOwnerBytes reqOut)
+                rawRefund = Coin (reqVal - mf)
+                draft =
+                    mkBasicTxOut
+                        refundAddr
+                        (inject rawRefund)
+                minCoin = getMinCoinTxOut pp draft
             in  mkBasicTxOut
                     refundAddr
-                    (inject (Coin (reqVal - mf)))
+                    (inject (max rawRefund minCoin))
         extractOwnerBytes out =
             case extractCageDatum out of
                 Just (RequestDatum req) ->
